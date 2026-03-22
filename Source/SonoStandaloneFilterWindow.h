@@ -31,6 +31,9 @@
 //extern juce::AudioProcessor* JUCE_API JUCE_CALLTYPE createPluginFilterOfType (juce::AudioProcessor::WrapperType type);
 //#endif
 
+#ifndef DOXYGEN
+#include <juce_audio_plugin_client/detail/juce_CreatePluginFilter.h>
+#endif
 
 #include "CrossPlatformUtils.h"
 
@@ -149,7 +152,7 @@ public:
     virtual void createPlugin()
     {
       #if JUCE_MODULE_AVAILABLE_juce_audio_plugin_client
-        processor = ::createPluginFilterOfType (AudioProcessor::wrapperType_Standalone);
+        processor = createPluginFilterOfType (AudioProcessor::wrapperType_Standalone);
       #else
         AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);
         processor.reset (createPluginFilter());
@@ -562,7 +565,7 @@ public:
     String  lastRecentsSetupFolder;
 
     std::unique_ptr<AudioDeviceManager::AudioDeviceSetup> options;
-    StringArray lastMidiDevices;
+    Array<MidiDeviceInfo> lastMidiDevices;
 
 private:
     
@@ -793,17 +796,19 @@ private:
 
     void timerCallback() override
     {
-        auto newMidiDevices = MidiInput::getDevices();
+        auto newMidiDevices = MidiInput::getAvailableDevices();
 
         if (newMidiDevices != lastMidiDevices)
         {
             for (auto& oldDevice : lastMidiDevices)
                 if (! newMidiDevices.contains (oldDevice))
-                    deviceManager.setMidiInputEnabled (oldDevice, false);
+                    deviceManager.setMidiInputDeviceEnabled (oldDevice.identifier, false);
 
             for (auto& newDevice : newMidiDevices)
                 if (! lastMidiDevices.contains (newDevice))
-                    deviceManager.setMidiInputEnabled (newDevice, true);
+                    deviceManager.setMidiInputDeviceEnabled (newDevice.identifier, true);
+
+            lastMidiDevices = newMidiDevices;
         }
     }
 
