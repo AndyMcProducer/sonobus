@@ -3,7 +3,7 @@ apply plugin: 'com.android.application'
 def ndkVersionString = "25.2.9519653"
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 36
     ndkVersion ndkVersionString
     namespace "com.sonosaurus.sonobus"
     externalNativeBuild {
@@ -25,7 +25,7 @@ android {
     defaultConfig {
         applicationId "com.sonosaurus.sonobus"
         minSdkVersion    24
-        targetSdkVersion 33
+        targetSdkVersion 36
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_TOOLCHAIN=clang", "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_static", "-DANDROID_CPP_FEATURES=exceptions rtti", "-DANDROID_ARM_MODE=arm", "-DANDROID_ARM_NEON=TRUE", "-DCMAKE_CXX_STANDARD=17", "-DCMAKE_CXX_EXTENSIONS=OFF"
@@ -105,10 +105,27 @@ android {
     }
 
     dependencies {
-        implementation 'androidx.appcompat:appcompat:1.0.2'
+        implementation 'com.android.support:support-core-utils:28.0.0'
+        implementation 'androidx.appcompat:appcompat:1.7.1'
+        implementation 'androidx.core:core:1.13.1'
+        implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
     }
 
-ndkVersion "22.0.7026061"
+ndkVersion "28.2.13676358"
+lintOptions {
+     abortOnError false
+}
+  
+// ensure Java 8 is used
+compileOptions {
+      sourceCompatibility JavaVersion.VERSION_1_8
+      targetCompatibility JavaVersion.VERSION_1_8
+ }
+
+ buildFeatures {
+       buildConfig = true
+ }
+
 
 }
 
