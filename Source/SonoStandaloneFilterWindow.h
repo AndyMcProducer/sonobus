@@ -1108,8 +1108,29 @@ private:
         }
 
         void resized() override
-        {         
-            auto r = getLocalBounds();
+        {
+
+            auto safeBounds = [this]
+            {
+                auto bounds = getLocalBounds();
+
+#if JUCE_IOS || JUCE_ANDROID
+                if (auto* display = Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())) {
+
+                    topInset = display->safeAreaInsets.getTop();
+                    bottomInset = display->safeAreaInsets.getBottom();
+                    leftInset = display->safeAreaInsets.getLeft();
+                    rightInset = display->safeAreaInsets.getRight();
+
+                    return display->safeAreaInsets.subtractedFrom (display->keyboardInsets.subtractedFrom (bounds));
+
+                }
+#endif
+
+                return bounds;
+            }();
+
+            auto r = safeBounds;
 
             bool portrait = getWidth() < getHeight();
             bool tall = getHeight() > 500;
@@ -1124,7 +1145,8 @@ private:
                 });
 #endif
             }
-            
+
+            /*
             float safetop=0.0f, safebottom=0.0f, safeleft=0.0f, saferight=0.0f;
             getSafeAreaInsets(getWindowHandle(), safetop, safebottom, safeleft, saferight);
             
@@ -1137,8 +1159,8 @@ private:
             r.removeFromBottom((int)safebottom);
             r.removeFromLeft((int)safeleft);
             r.removeFromRight((int)saferight);
-            
-            
+            */
+
             if (shouldShowNotification) {
                 notification.setBounds (r.removeFromTop (NotificationArea::height));                
                 topInset += NotificationArea::height; 
