@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="ZRovAH" name="SonoBus" projectType="audioplug" companyName="Sonosaurus"
-              companyCopyright="2023 Sonosaurus LLC" companyEmail="support@sonosaurus.com"
+              companyCopyright="2026 Sonosaurus LLC" companyEmail="support@sonosaurus.com"
               pluginFormats="buildAUv3,buildStandalone,enableIAA" pluginManufacturerCode="Sono"
               pluginCode="NBus" defines="JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1&#10;&#10;"
-              pluginDesc="SonoBus - Network Audio" version="1.7.2" cppLanguageStandard="17"
+              pluginDesc="SonoBus - Network Audio" version="1.7.3" cppLanguageStandard="17"
               projectLineFeed="&#10;" jucerFormatVersion="1" pluginAUMainType="'aufx'"
               pluginAUIsSandboxSafe="1">
   <MAINGROUP id="i87g34" name="SonoBus">
