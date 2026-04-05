@@ -75,6 +75,7 @@
 		6616BFD4F4DAC38A30E86CFB /* include_juce_audio_formats.mm */ = {isa = PBXBuildFile; fileRef = DCC58A61382509AB1AB97723; };
 		66B461447FC86E7E97E60B80 /* AUv3 AppExtension */ = {isa = PBXBuildFile; fileRef = 39B19482CAE1F62C09C6C8E1; };
 		6ED32852E041D57ACFE69212 /* include_juce_audio_processors.mm */ = {isa = PBXBuildFile; fileRef = 57A012DCCBB25C4A68F7A55B; };
+		71904AF1D9618685AF0CD71A /* AppIcon.icns */ = {isa = PBXBuildFile; fileRef = CD4DDB121F123108BF982705; };
 		72DB798AA1319628E8DF8631 /* WebKit.framework */ = {isa = PBXBuildFile; fileRef = 72F3148F968AC28B87CBBEFF; };
 		7D24EFFF83031C170C477900 /* LatencyMatchView.cpp */ = {isa = PBXBuildFile; fileRef = 1084B0E84FF8C71B059AECDC; };
 		7D6667A3CF01B657D423D643 /* include_juce_gui_basics_3.cpp */ = {isa = PBXBuildFile; fileRef = E3497B910F0713376649F389; };
@@ -412,6 +413,7 @@
 		C92014FACCBF1C01BF8FF427 /* dispminimal.svg */ /* dispminimal.svg */ = {isa = PBXFileReference; lastKnownFileType = file.svg; name = dispminimal.svg; path = ../../../images/dispminimal.svg; sourceTree = SOURCE_ROOT; };
 		CA33AE73E84A0CD168AA64AE /* CoreImage.framework */ /* CoreImage.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreImage.framework; path = System/Library/Frameworks/CoreImage.framework; sourceTree = SDKROOT; };
 		CCC57E9D47682B9C33DB5D16 /* WaveformTransportComponent.h */ /* WaveformTransportComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WaveformTransportComponent.h; path = ../../../Source/WaveformTransportComponent.h; sourceTree = SOURCE_ROOT; };
+		CD4DDB121F123108BF982705 /* AppIcon.icns */ /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = file.icns; name = AppIcon.icns; path = AppIcon.icns; sourceTree = SOURCE_ROOT; };
 		CE4EC5E56573F2F805FA749F /* lgc_bar.wav */ /* lgc_bar.wav */ = {isa = PBXFileReference; lastKnownFileType = file.wav; name = lgc_bar.wav; path = ../../../images/lgc_bar.wav; sourceTree = SOURCE_ROOT; };
 		CEF6036B9B47D6F0CDE3BB2B /* SampleEditView.cpp */ /* SampleEditView.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SampleEditView.cpp; path = ../../../Source/SampleEditView.cpp; sourceTree = SOURCE_ROOT; };
 		CF263E8AD4294379B8BF7714 /* SonoMultiStateDrawableButton.cpp */ /* SonoMultiStateDrawableButton.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SonoMultiStateDrawableButton.cpp; path = ../../../Source/SonoMultiStateDrawableButton.cpp; sourceTree = SOURCE_ROOT; };
@@ -577,6 +579,7 @@
 				82713E29D7F5444426914EC8,
 				983E790D2F2D7033319BB321,
 				5A0DA232740E2178468D6013,
+				CD4DDB121F123108BF982705,
 				11CCF97D832302CED161CC7F,
 				5A0DA232740E2178468D6013,
 				D4FBD89678E3DD575C901A5D,
@@ -1175,6 +1178,7 @@
 			files = (
 				4ADDF3100FED442E80EA56B2,
 				AE79D8D0DC9A60126440B326,
+				71904AF1D9618685AF0CD71A,
 				B67E07CBECEE852683D4D97B,
 				AE79D8D0DC9A60126440B326,
 				B10DC84ACCA68130B6BA1D6D,
@@ -1187,6 +1191,7 @@
 			files = (
 				4ADDF3100FED442E80EA56B2,
 				AE79D8D0DC9A60126440B326,
+				71904AF1D9618685AF0CD71A,
 				B67E07CBECEE852683D4D97B,
 				AE79D8D0DC9A60126440B326,
 				B10DC84ACCA68130B6BA1D6D,
@@ -1344,8 +1349,11 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/build/$(CONFIGURATION)";
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = "YES";
 				DEVELOPMENT_TEAM = XCS435894D;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_DEBUGGING_SYMBOLS = "full";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = "YES";
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"_NDEBUG=1",
@@ -1407,8 +1415,11 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/build/$(CONFIGURATION)";
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = "YES";
 				DEVELOPMENT_TEAM = XCS435894D;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_DEBUGGING_SYMBOLS = "full";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = "YES";
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"_NDEBUG=1",
@@ -1470,8 +1481,11 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/build/$(CONFIGURATION)";
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = "YES";
 				DEVELOPMENT_TEAM = XCS435894D;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_DEBUGGING_SYMBOLS = "full";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = "YES";
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"_NDEBUG=1",
@@ -1532,8 +1546,11 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/build/$(CONFIGURATION)";
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = "YES";
 				DEVELOPMENT_TEAM = XCS435894D;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_DEBUGGING_SYMBOLS = "full";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = "YES";
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"_NDEBUG=1",
@@ -1690,7 +1707,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_NAME = "SonoBus";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1805,7 +1822,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "SonoBus";
 				SDKROOT = iphoneos;

@@ -7414,9 +7414,11 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
     }
 
     bool hostPlaying = rposInfo && rposInfo->getIsPlaying();
-    auto hostBpm = rposInfo->getBpm();
-    if (hostBpm && *hostBpm > 0.0) {
-        useBpm = *hostBpm;
+    if (rposInfo) {
+        auto hostBpm = rposInfo->getBpm();
+        if ( hostBpm && *hostBpm > 0.0) {
+            useBpm = *hostBpm;
+        }
     }
 
     if (syncmethost) {
