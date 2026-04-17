@@ -37,15 +37,28 @@ jobs:
     - name: Build
       run: cmake --build build --config Release --parallel 4
 
+    - name: Zip Artifacts (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Compress-Archive -Path build/SonoBus_artefacts/Release/* -DestinationPath SonoBus-Windows.zip
+
+    - name: Zip Artifacts (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        zip -r SonoBus-macOS.zip build/SonoBus_artefacts/Release/*
+
+    - name: Zip Artifacts (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        zip -r SonoBus-Linux.zip build/SonoBus_artefacts/Release/*
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SonoBus-${{ runner.os }}
-        path: |
-           build/SonoBus_artefacts/Release/
-           build/SonoBus_artefacts/Standalone/
-           build/SonoBus_artefacts/VST3/
-        if-no-files-found: warn
+        path: SonoBus-*.zip
+        if-no-files-found: error
 
   release:
     name: Create Release
@@ -57,15 +70,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/SonoBus-Linux/**/*
-            artifacts/SonoBus-macOS/**/*
-            artifacts/SonoBus-Windows/**/*
+          files: artifacts/*.zip
           draft: false
           prerelease: false
         env:
