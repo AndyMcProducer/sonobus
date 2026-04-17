@@ -29,7 +29,7 @@ public:
     int remotePeerIndex = -1; // -1 means local file playback
 
     // -------------------------------------------------------------------------
-    struct StemStrip : public Component, public MouseListener
+    struct StemStrip : public Component
     {
         StemStrip(int idx_, SonobusAudioProcessor& proc_, MoggMixerComponent* parent_)
             : idx(idx_), processor(proc_), parent(parent_)
@@ -135,6 +135,9 @@ public:
             fader.addMouseListener(this, false);
             muteBtn.addMouseListener(this, false);
             soloBtn.addMouseListener(this, false);
+
+            meter.setMeterSource(&processor.getMoggStemMeterSource(isRemote ? parent->remotePeerIndex : -1, idx));
+            addAndMakeVisible(meter);
         }
 
         void mouseDown(const MouseEvent& e) override
@@ -198,7 +201,8 @@ public:
             muteBtn.setBounds(b.removeFromTop(22).reduced(4,0));
             b.removeFromTop(4);
             dbLabel.setBounds(b.removeFromTop(14));
-            fader.setBounds(b.reduced(8,4));
+            meter.setBounds(b.removeFromRight(15).reduced(2, 4));
+            fader.setBounds(b.reduced(2,4));
         }
 
         int idx;
@@ -211,6 +215,7 @@ public:
         Label dbLabel;
         MoggMixerComponent* parent;
 
+        foleys::LevelMeter meter;
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StemStrip)
     };
 
@@ -228,6 +233,8 @@ public:
         processor.removeMidiLearnListener(this);
         stopTimer(); 
     }
+
+    int getRemotePeerIndex() const { return remotePeerIndex; }
 
     void midiMappingChanged() override { /* refresh if we held state */ }
 
@@ -363,7 +370,11 @@ public:
 
         setVisible(true);
         setAlwaysOnTop(true);
+        
+        DBG("MoggMixerWindow created for peer index: " << remoteIdx);
     }
+
+    MoggMixerComponent* getMixer() const { return mixer.get(); }
 
 
     void closeButtonPressed() override

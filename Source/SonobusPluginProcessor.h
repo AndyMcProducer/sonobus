@@ -367,7 +367,7 @@ public:
     IPAddress getLocalIPAddress() const { return mLocalIPAddress; }
     
 
-    int getSendChannels() const { return mSendChannels.get(); }
+    int getSendChannels() const;
 
     int connectRemotePeer(const String & host, int port, const String & username = "", const String & groupname = "",  bool reciprocate=true);
     bool disconnectRemotePeer(const String & host, int port, int32_t sourceId);
@@ -1129,6 +1129,11 @@ private:
     foleys::LevelMeterSource outputMeterSource;
     foleys::LevelMeterSource filePlaybackMeterSource;
     foleys::LevelMeterSource metMeterSource;
+    foleys::LevelMeterSource moggStemMeterSources[MAX_CHANGROUPS];
+
+public:
+    foleys::LevelMeterSource& getMoggStemMeterSource(int peerIndex, int stemIndex);
+private:
 
     // AOO stuff
     aoo::isource::pointer mAooDummySource;

@@ -2,6 +2,7 @@
 // Copyright (C) 2020 Jesse Chappell
 
 #include "ChannelGroupsView.h"
+#include "SonobusPluginEditor.h"
 
 
 using namespace SonoAudio;
@@ -898,9 +899,18 @@ void ChannelGroupView::paint(Graphics& g)
 
 void ChannelGroupView::resized()
 {
-    
     mainbox.performLayout(getLocalBounds());
     
+    for (auto& item : mainbox.items) {
+        if (item.associatedFlexBox == &maincontentbox) {
+            maincontentbox.performLayout(item.currentBounds.toNearestInt());
+            for (auto& subitem : maincontentbox.items) {
+                if (subitem.associatedFlexBox == &inbox) inbox.performLayout(subitem.currentBounds.toNearestInt());
+                else if (subitem.associatedFlexBox == &monbox) monbox.performLayout(subitem.currentBounds.toNearestInt());
+            }
+        }
+    }
+
     if (panLabel) {
         panLabel->setBounds(panSlider->getBounds().removeFromTop(16).translated(0, -2));
     }
@@ -1206,10 +1216,22 @@ void ChannelGroupsView::resized()
         mMainChannelView->resized();
     }
 
-    if (mMetChannelView && mMetChannelView->isVisible()) {
-        // resize bg border
-        auto mfbounds = Rectangle<int>(mMetChannelView->getX() - 3, mMetChannelView->getY(), mMetChannelView->getWidth() + 6, mSoundboardChannelView->getBottom() - mMetChannelView->getY() + 4);
-        mMetFileBg->setRectangle (mfbounds.toFloat());
+    if (!mPeerMode) {
+        if (mMetChannelView && mMetChannelView->isVisible()) {
+            mMetChannelView->resized();
+        }
+        for (auto v : mFileChannelViews) {
+            if (v && v->isVisible()) v->resized();
+        }
+        if (mSoundboardChannelView && mSoundboardChannelView->isVisible()) {
+            mSoundboardChannelView->resized();
+        }
+
+        if (mMetChannelView && mMetChannelView->isVisible()) {
+            // resize bg border
+            auto mfbounds = Rectangle<int>(mMetChannelView->getX() - 3, mMetChannelView->getY(), mMetChannelView->getWidth() + 6, mSoundboardChannelView->getBottom() - mMetChannelView->getY() + 4);
+            mMetFileBg->setRectangle (mfbounds.toFloat());
+        }
     }
 
     Component* dw = nullptr; // this->findParentComponentOfClass<DocumentWindow>();    
@@ -1418,8 +1440,10 @@ ChannelGroupView * ChannelGroupsView::createChannelGroupView(bool first)
     pvf->moggButton = std::make_unique<TextButton>("MOGG");
     pvf->moggButton->addListener(this);
     pvf->moggButton->setTooltip(TRANS("Open MOGG multitrack mixer"));
-    pvf->moggButton->setColour(TextButton::buttonColourId,  Colour(0xFF553366));
-    pvf->moggButton->setColour(TextButton::buttonOnColourId, Colour(0xFF774499));
+    pvf->moggButton->setColour(TextButton::buttonColourId,  Colour(0xFF6C2E8C));
+    pvf->moggButton->setColour(TextButton::buttonOnColourId, Colour(0xFF8E3EB5));
+    pvf->moggButton->setColour(TextButton::textColourOffId, Colours::white);
+    pvf->moggButton->setColour(TextButton::textColourOnId, Colours::white);
     pvf->moggButton->setConnectedEdges(Button::ConnectedOnLeft | Button::ConnectedOnRight | Button::ConnectedOnTop | Button::ConnectedOnBottom);
 
     std::unique_ptr<Drawable> destimg(Drawable::createFromImageData(BinaryData::chevron_forward_svg, BinaryData::chevron_forward_svgSize));
@@ -1784,7 +1808,9 @@ void ChannelGroupsView::rebuildChannelViews(bool notify)
             mFileChannelViews.add(v);
             
             v->nameLabel->setEditable(false);
-            v->nameLabel->setText(fpgCnt == 1 ? TRANS("File Playback") : TRANS("File pb ") + String(idx+1), dontSendNotification);
+            String fname = processor.getFilePlaybackChannelGroupName(idx);
+            if (fname.isEmpty()) fname = fpgCnt == 1 ? TRANS("File Playback") : TRANS("File pb ") + String(idx+1);
+            v->nameLabel->setText(fname, dontSendNotification);
             v->nameLabel->setColour(Label::backgroundColourId, Colours::transparentBlack);
             v->nameLabel->setColour(Label::outlineColourId, Colours::transparentBlack);
 
@@ -2131,13 +2157,13 @@ void ChannelGroupsView::updateLayoutForRemotePeer(bool notify)
 
                 if (i < 0 && processor.getRemotePeerIsMogg(mPeerIndex)) {
                     pvf->inbox.items.add(FlexItem(5, 3));
-                    pvf->inbox.items.add(FlexItem(40, minitemheight, *pvf->moggButton).withMargin(0).withFlex(0));
+                    pvf->inbox.items.add(FlexItem(50, minitemheight, *pvf->moggButton).withMargin(0).withFlex(0));
                 }
             }
             else {
                  if (i < 0 && processor.getRemotePeerIsMogg(mPeerIndex)) {
                     pvf->inbox.items.add(FlexItem(3, 3));
-                    pvf->inbox.items.add(FlexItem(40, minitemheight, *pvf->moggButton).withMargin(0).withFlex(0));
+                    pvf->inbox.items.add(FlexItem(50, minitemheight, *pvf->moggButton).withMargin(0).withFlex(0));
                 }
             }
             pvf->inbox.items.add(FlexItem(3, 3));
@@ -2440,8 +2466,8 @@ void ChannelGroupsView::updateLayoutForInput(bool notify)
     channelsBox.items.add(FlexItem(8, bgaph).withMargin(0));
     peersheight += addrowheight + gaph + bgaph;
 
-    // all the inputs, plus three extra (met and file playback and soundboard)
-    for (int i =  0; i < mChannelViews.size() + 3; ++i, ++chi) {
+    // all the inputs, plus (1 for met, mFileChannelViews.size() for files, 1 for soundboard)
+    for (int i = 0; i < (int)mChannelViews.size() + (int)mFileChannelViews.size() + 2; ++i, ++chi) {
         if (i==0) {
             chi = 0; // ensure this
         }
@@ -2467,25 +2493,24 @@ void ChannelGroupsView::updateLayoutForInput(bool notify)
 
         bool ismetorfileorsoundboard = false;
 
-        ChannelGroupView * pvf;
-        if (i == mChannelViews.size()) {
+        ChannelGroupView * pvf = nullptr;
+        if (i < mChannelViews.size()) {
+            pvf = mChannelViews.getUnchecked(i);
+        } else if (i == mChannelViews.size()) {
             pvf = mMetChannelView.get();
             ismetorfileorsoundboard = true;
-        } else if (i >= mChannelViews.size() + 1 && i < mChannelViews.size() + 1 + mFileChannelViews.size()) {
-            int fidx = i - (mChannelViews.size() + 1);
+        } else if (i < mChannelViews.size() + 1 + mFileChannelViews.size()) {
+            int fidx = i - ((int)mChannelViews.size() + 1);
             pvf = mFileChannelViews[fidx];
-            // meter logic adjusted below maybe?
             ismetorfileorsoundboard = true;
-        }
-        else if (i >= mChannelViews.size() + 1 + mFileChannelViews.size()) {
+        } else {
             pvf = mSoundboardChannelView.get();
             auto numsoundboardchan = processor.getSoundboardProcessor()->getMeterSource().getNumChannels();
             mainmeterwidth = numsoundboardchan * (numsoundboardchan > 2 ? 6 : meterwidth);
             ismetorfileorsoundboard = true;
         }
-        else {
-            pvf = mChannelViews.getUnchecked(i);
-        }
+
+        if (pvf == nullptr) continue;
 
         //pvf->updateLayout();
         bool viewexpanded = true;
@@ -2684,7 +2709,7 @@ void ChannelGroupsView::updateLayoutForInput(bool notify)
                 peersheight += mbh + 2;
             }
 
-            if (i < mChannelViews.size()+2) {
+            if (i < (int)mChannelViews.size() + (int)mFileChannelViews.size() + 1) {
                 channelsBox.items.add(FlexItem(3, 4));
                 peersheight += 4;
             }
@@ -2833,6 +2858,10 @@ void ChannelGroupsView::updateInputModeChannelViews(int specific)
 
     for (int i=0; i < mFileChannelViews.size(); i++) {
         auto v = mFileChannelViews[i];
+        
+        String fname = processor.getFilePlaybackChannelGroupName(i);
+        if (fname.isNotEmpty()) v->nameLabel->setText(fname, dontSendNotification);
+
         String desttext;
         int destcnt, deststart;
         processor.getFilePlaybackDestStartAndCount(i, deststart, destcnt);
@@ -3483,6 +3512,7 @@ void ChannelGroupsView::buttonClicked (Button* buttonThatWasClicked)
                 // see if any are muted
                 bool anysubmute = false;
                 bool allsubmute = true;
+                int changroups = processor.getRemotePeerChannelGroupCount(mPeerIndex);
                 for (int gi=0; gi < changroups; ++gi) {
                     if (processor.getRemotePeerChannelMuted(mPeerIndex, gi)) {
                         anysubmute = true;
@@ -3505,22 +3535,32 @@ void ChannelGroupsView::buttonClicked (Button* buttonThatWasClicked)
                 break;
             }
             else if (pvf->linkButton.get() == buttonThatWasClicked) {
-                //processor.setRemotePeerChannelMuted (mPeerIndex, changroup, buttonThatWasClicked->getToggleState());
-                //updateChannelViews();
-
                 showChangePeerChannelsLayout(i, buttonThatWasClicked);
-
                 break;
             }
+            else if (pvf->destButton.get() == buttonThatWasClicked) {
                 showDestSelectionMenu(buttonThatWasClicked, i);
-
                 break;
             }
             else if (pvf->moggButton.get() == buttonThatWasClicked) {
                 // Open remote MOGG mixer
-                auto editor = findParentComponentOfClass<SonobusAudioProcessorEditor>();
+                SonobusAudioProcessorEditor* editor = nullptr;
+                
+                // Walk up the component tree to find the main editor
+                Component* c = this;
+                while (c != nullptr) {
+                    if (auto* e = dynamic_cast<SonobusAudioProcessorEditor*>(c)) {
+                        editor = e;
+                        break;
+                    }
+                    c = c->getParentComponent();
+                }
+
                 if (editor) {
+                    DBG("Opening MOGG Mixer for peer " << mPeerIndex);
                     editor->showMoggMixer(mPeerIndex);
+                } else {
+                    DBG("Could NOT find SonobusAudioProcessorEditor for MOGG button click!");
                 }
                 break;
             }

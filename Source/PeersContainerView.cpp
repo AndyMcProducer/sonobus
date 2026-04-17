@@ -982,10 +982,18 @@ void PeersContainerView::updatePeerOrdering()
 
     for (int i=0; i < processor.getNumberRemotePeers(); ++i) {
         String username = processor.getRemotePeerUserName(i);
+        // Use a more unique key to avoid same-name collisions during sorting
+        String uniqueKey = username + "_" + String(i);
 
-        auto found = mPeerPriorityOrdering.find(username);
+        auto found = mPeerPriorityOrdering.find(uniqueKey);
+        if (found == mPeerPriorityOrdering.end()) {
+             // also check by pure name for legacy/compatibility
+             found = mPeerPriorityOrdering.find(username);
+        }
+
         if (found != mPeerPriorityOrdering.end()) {
-            priorityIndexes[found->second] = i;
+            // Use index as tie-breaker if priorities same
+            priorityIndexes[(found->second << 16) | (i & 0xFFFF)] = i;
         }
     }
 
