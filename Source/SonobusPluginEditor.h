@@ -179,6 +179,8 @@ public:
 
     bool setupLocalisation(const String & overrideLang = {});
 
+    void showMoggMixer(int peerIndex = -1);
+
 private:
 
     void updateLayout();
@@ -205,8 +207,6 @@ private:
     void showMonitorDelayView(bool flag);
 
     void showInputReverbView(bool flag);
-
-    void showMoggMixer(int peerIndex = -1);
 
     void updateServerStatusLabel(const String & mesg, bool mainonly=true);
     void updateChannelState(bool force=false);

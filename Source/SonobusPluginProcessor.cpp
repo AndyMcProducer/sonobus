@@ -340,6 +340,7 @@ struct SonobusAudioProcessor::RemotePeer {
     // metering
     foleys::LevelMeterSource sendMeterSource;
     foleys::LevelMeterSource recvMeterSource;
+    foleys::LevelMeterSource moggStemMeterSources[MAX_CHANGROUPS];
     bool viewExpanded = false;
     int orderPriority = -1;
 
@@ -366,6 +367,7 @@ struct SonobusAudioProcessor::RemotePeer {
 
     bool isMogg = false;
     int moggStemCount = 0;
+    AudioSampleBuffer moggStems;
 
     std::unique_ptr<AudioFormatWriter::ThreadedWriter> fileWriter;
 
@@ -6018,7 +6020,9 @@ int SonobusAudioProcessor::getRemotePeerMoggStemCount(int index) const
 {
     const ScopedReadLock sl (mCoreLock);
     if (index >= 0 && index < mRemotePeers.size()) {
-        return mRemotePeers.getUnchecked(index)->moggStemCount;
+        int count = mRemotePeers.getUnchecked(index)->moggStemCount;
+        DBG("getRemotePeerMoggStemCount for peer " << index << ": " << count);
+        return count;
     }
     return 0;
 }
@@ -6538,23 +6542,75 @@ void SonobusAudioProcessor::setupSourceFormat(SonobusAudioProcessor::RemotePeer 
     }
 }
 
+int SonobusAudioProcessor::getSendChannels() const
+{
+    int baseMode = mSendChannels.get();
+    int count = 2;
+    if (baseMode == 0) { // Match # Inputs
+        count = 0;
+        for (auto i = 0; i < mInputChannelGroupCount && i < MAX_CHANGROUPS; ++i)
+        {
+            count += mInputChannelGroups[i].params.numChannels;
+        }
+        if (mSendMet.get()) count += 1;
+        if (mSendPlaybackAudio.get()) {
+            for (int i=0; i < mFilePlaybackGroupCount; ++i) {
+                if (!mFilePlaybackChannelGroups[i].params.muted) {
+                    count += mFilePlaybackChannelGroups[i].params.numChannels;
+                }
+            }
+        }
+        if (mSendSoundboardAudio.get()) {
+            count += soundboardChannelProcessor->getFileSourceNumberOfChannels();
+        }
+    }
+    else if (baseMode == 1) { // Mono
+        count = 1;
+    }
+    else if (baseMode == 2) { // Stereo
+        count = 2;
+    }
+
+    if (mSendPlaybackAudio.get() && (mFilePlaybackGroupCount > 1) && baseMode > 0) {
+        // Enforce extra channels for MOGG stems even in mono/stereo
+        count = jmax((int)count, (int)(2 + mFilePlaybackGroupCount - 1));
+    }
+    return count;
+}
+
 ValueTree SonobusAudioProcessor::getSendUserFormatLayoutTree()
 {
     // get userformat from send info
     ValueTree fmttree(channelLayoutsKey);
 
-    bool isMogg = mFilePlaybackGroupCount.load() > 1;
+    bool isMogg = mFilePlaybackGroupCount > 1;
     fmttree.setProperty("isMogg", isMogg, nullptr);
     if (isMogg) {
-        fmttree.setProperty("moggStemCount", (int)mFilePlaybackGroupCount.load(), nullptr);
+        fmttree.setProperty("moggStemCount", (int)mFilePlaybackGroupCount, nullptr);
     }
 
-    if (mSendChannels.get() == 1 || mSendChannels.get() == 2) {
-        // not multichannel, this is a mixdown
+    int baseSendChans = mSendChannels.get();
+    bool sendPlayback = mSendPlaybackAudio.get();
+
+    if (baseSendChans == 1 || baseSendChans == 2) {
+        // Main mixed group (Mono or Stereo)
         ChannelGroupParams tmpgrp;
+        tmpgrp.name = baseSendChans == 1 ? "Mono Mix" : "Stereo Mix";
         tmpgrp.chanStartIndex = 0;
-        tmpgrp.numChannels = mSendChannels.get();
+        tmpgrp.numChannels = baseSendChans;
         fmttree.appendChild(tmpgrp.getChannelLayoutValueTree(), nullptr);
+
+        // ALWAYS APPEND MOGG STEMS (Groups 1..N) starting at channel 2
+        // if we are in this mode. This satisfies "MOGG should still be multi-channel".
+        if (sendPlayback && isMogg) {
+            int chstart = 2;
+            for (int i=1; i < (int)mFilePlaybackGroupCount; ++i) {
+                ChannelGroupParams mgrp = mFilePlaybackChannelGroups[i].params;
+                mgrp.chanStartIndex = chstart;
+                fmttree.appendChild(mgrp.getChannelLayoutValueTree(), nullptr);
+                chstart += mgrp.numChannels;
+            }
+        }
     }
     else {
         int chstart = 0;
@@ -6573,18 +6629,9 @@ ValueTree SonobusAudioProcessor::getSendUserFormatLayoutTree()
             chstart += tmpgrp.numChannels;
         }
         if (mSendPlaybackAudio.get()) {
-            bool isMogg = mFilePlaybackGroupCount.load() > 1;
-            if (isMogg) {
-                // Add a "Full Mix" stereo group first for legacy clients
-                ChannelGroupParams mixgrp;
-                mixgrp.name = "Full Mix";
-                mixgrp.numChannels = 2;
-                mixgrp.chanStartIndex = chstart;
-                fmttree.appendChild(mixgrp.getChannelLayoutValueTree(), nullptr);
-                chstart += 2;
-            }
+            bool isMogg = mFilePlaybackGroupCount > 1;
 
-            for (int i=0; i < mFilePlaybackGroupCount; ++i) {
+            for (int i=0; i < (int)mFilePlaybackGroupCount; ++i) {
                 if (mFilePlaybackChannelGroups[i].params.muted) continue;
                 ChannelGroupParams tmpgrp = mFilePlaybackChannelGroups[i].params;
                 tmpgrp.chanStartIndex = chstart;
@@ -6617,6 +6664,17 @@ void SonobusAudioProcessor::setupSourceUserFormat(RemotePeer * peer, aoo::isourc
     fmttree.writeToStream(stream);
 
     source->set_userformat(destData.getData(), (int32_t) destData.getSize());
+}
+
+
+foleys::LevelMeterSource& SonobusAudioProcessor::getMoggStemMeterSource(int peerIndex, int stemIndex)
+{
+    const ScopedReadLock sl (mCoreLock);
+    int idx = jlimit(0, MAX_CHANGROUPS - 1, stemIndex);
+    if (peerIndex >= 0 && peerIndex < mRemotePeers.size()) {
+        return mRemotePeers.getUnchecked(peerIndex)->moggStemMeterSources[idx];
+    }
+    return moggStemMeterSources[idx];
 }
 
 void SonobusAudioProcessor::updateRemotePeerUserFormat(int index, RemotePeer * onlypeer)
@@ -6914,7 +6972,7 @@ void SonobusAudioProcessor::parameterChanged (const String &parameterID, float n
     }
     else if (parameterID == paramSendFileAudio) {
         mSendPlaybackAudio = newValue > 0;
-        if (mSendPlaybackAudio.get() && mFilePlaybackGroupCount.load() > 1) {
+        if (mSendPlaybackAudio.get() && mFilePlaybackGroupCount > 1) {
             // Force multichannel mode if MOGG is playing
             if (mSendChannels.get() != 0) {
                 mState.getParameter(paramSendChannels)->setValueNotifyingHost(0.0f); // 0 is Match Inputs
@@ -7447,8 +7505,14 @@ void SonobusAudioProcessor::ensureBuffers(int numSamples)
     int fileplaychans = mCurrentAudioFileSource ? mCurrentAudioFileSource->getAudioFormatReader()->numChannels : 2;
     int fileplaymaxchans = jmax(maxchans, fileplaychans);
     if (mSendPlaybackAudio.get()) {
-        // plus a possible file sending
-        totsendchans += fileplaychans;
+        // Correctly calculate total channels for MOGG (Full Mix stereo + individual mono stems)
+        if (mFilePlaybackGroupCount > 1) {
+            for (int i=0; i < mFilePlaybackGroupCount; ++i) {
+                totsendchans += mFilePlaybackChannelGroups[i].params.numChannels;
+            }
+        } else {
+            totsendchans += fileplaychans;
+        }
     }
 
     meterRmsWindow = getSampleRate() * METER_RMS_SEC / currSamplesPerBlock;
@@ -7562,7 +7626,7 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
     float inmonPan1 = mInMonPan1.get();
     float inmonPan2 = mInMonPan2.get();
 
-    int sendChans = mSendChannels.get();
+    int sendChans = getSendChannels();
     bool sendfileaudio = mSendPlaybackAudio.get();
     bool sendsoundboardaudio = mSendSoundboardAudio.get();
     bool sendmet = mSendMet.get();
@@ -7786,9 +7850,8 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
     
     
     // do the input panning before everything else
-    int sendCh = mSendChannels.get();
-    //int sendPanChannels = sendCh == 0 ?  inputBuffer.getNumChannels() : jmin(inputBuffer.getNumChannels(), jmax(mainBusOutputChannels, sendCh));
-    int sendPanChannels = sendCh == 0 ?  inputPostBuffer.getNumChannels() : jmin(sendWorkBuffer.getNumChannels(), sendCh);
+    int sendCh = getSendChannels();
+    int sendPanChannels = sendCh; // Use the dynamic send channel count
     //int panChannels = jmin(inputBuffer.getNumChannels(), jmax(mainBusOutputChannels, sendCh));
     // if sending as mono, split the difference about applying gain attenuation for the number of input channels
     float tgain = sendPanChannels == 1 && inputPostBuffer.getNumChannels() > 0 ? (1.0f/std::max(1.0f, (float)(inputPostBuffer.getNumChannels() * 0.5f))) : 1.0f;
@@ -7891,92 +7954,17 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
             
             bool layoutChanged = false;
             // Map stems to channel groups
-            if (mFilePlaybackGroupCount != srcchans + 1) {
-                mFilePlaybackGroupCount = std::min(srcchans + 1, MAX_CHANGROUPS);
-                layoutChanged = true;
-                
-                // Group 0 is the Full Mix (stereo)
-                mFilePlaybackChannelGroups[0].params.numChannels = 2;
-                mFilePlaybackChannelGroups[0].params.name = "Full Mix";
-                mFilePlaybackChannelGroups[0].commitMonitorDelayParams();
+            /* mFilePlaybackGroupCount update moved to Message thread (openAudioFile) */
 
-                for (int i=1; i < mFilePlaybackGroupCount; i++) {
-                    mFilePlaybackChannelGroups[i].params.numChannels = 1;
-                    mFilePlaybackChannelGroups[i].params.name = "Stem " + String(i);
-                    mFilePlaybackChannelGroups[i].commitMonitorDelayParams();
-                }
-            }
             
             if (layoutChanged) {
                 // trigger ui rebuild ?
             }
 
             if (sendfileaudio) {
-            if (sendPanChannels == 1) { // sum to mono
-                auto filech = filestartch;
-                for (int i=0; i < mFilePlaybackGroupCount; i++) {
-                    if (mFilePlaybackChannelGroups[i].params.muted || mFilePlaybackChannelGroups[i].params.gain == 0.0f) {
-                        filech += 1;
-                        continue;
-                    }
-                    if (anyinputsoloed && !mFilePlaybackChannelGroups[i].params.soloed) {
-                        filech += 1;
-                        continue;
-                    }
-                    float fgain = mFilePlaybackChannelGroups[i].params.gain;
-                    if (fgain > 0.0f && filech < fileChannels) {
-                        float panv = mFilePlaybackChannelGroups[i].params.pan[0];
-                        float left = std::cos(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
-                        float right = std::sin(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
-                        float pangain = left + right; // mono mix
-                        sendWorkBuffer.addFromWithRamp(0, 0, fileBuffer.getReadPointer(filech, 0), numSamples, _lastfplaygain * pangain, fgain * pangain);
-                    }
-                    filech += 1;
-                }
-                _lastfplaygain = mFilePlaybackChannelGroups[0].params.gain;
-            }
-            else if (sendPanChannels >= 2) {
-                // Group 0 is the "Full Mix" (stereo)
-                // Individual stems are Groups 1..N
-                int dstStereoStart = mFilePlaybackChannelGroups[0].params.panDestStartIndex;
-                float masterGain = mFilePlaybackChannelGroups[0].params.gain; 
-                bool masterMuted = mFilePlaybackChannelGroups[0].params.muted;
-                bool masterSoloed = mFilePlaybackChannelGroups[0].params.soloed;
-
-                // First pass: build the stereo downmix for all active stems
-                if (!masterMuted && (!anyinputsoloed || masterSoloed)) {
-                    int filech = 0;
-                    for (int i=1; i < mFilePlaybackGroupCount; i++) {
-                        if (mFilePlaybackChannelGroups[i].params.muted) {
-                            filech += 1;
-                            continue;
-                        }
-                        if (anyinputsoloed && !mFilePlaybackChannelGroups[i].params.soloed) {
-                            filech += 1;
-                            continue;
-                        }
-                        float stemGain = mFilePlaybackChannelGroups[i].params.gain;
-                        if (stemGain > 0.0f && filech < fileChannels) {
-                            float panv = mFilePlaybackChannelGroups[i].params.pan[0];
-                            float left = std::cos(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
-                            float right = std::sin(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
-                            int dstL = dstStereoStart;
-                            int dstR = jmin(dstStereoStart + 1, sendPanChannels - 1);
-                            
-                            // Mix with both stem gain and master gain
-                            sendWorkBuffer.addFrom(dstL, 0, fileBuffer.getReadPointer(filech, 0), numSamples, masterGain * stemGain * left);
-                            sendWorkBuffer.addFrom(dstR, 0, fileBuffer.getReadPointer(filech, 0), numSamples, masterGain * stemGain * right);
-                        }
-                        filech += 1;
-                    }
-                }
-                _lastfplaygain = masterGain; // for smoothing in next block
-                
-                // Second pass (multichannel only): send individual stems at channels 2+
-                if (sendPanChannels > 2) {
-                    int dstch = dstStereoStart + 2; // start after the master stereo pair
-                    int filech = 0;
-                    for (int i=1; i < mFilePlaybackGroupCount && dstch < sendPanChannels; i++) {
+                if (sendChans == 1) { // sum to mono
+                    auto filech = 0;
+                    for (int i=0; i < mFilePlaybackGroupCount; i++) {
                         if (mFilePlaybackChannelGroups[i].params.muted || mFilePlaybackChannelGroups[i].params.gain == 0.0f) {
                             filech += 1;
                             continue;
@@ -7986,22 +7974,84 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
                             continue;
                         }
                         float fgain = mFilePlaybackChannelGroups[i].params.gain;
-                        if (filech < fileChannels) {
-                            mFilePlaybackChannelGroups[i].processPan(fileBuffer, filech, sendWorkBuffer, dstch, 1, numSamples, fgain);
-                            dstch++;
+                        if (fgain > 0.0f && filech < fileChannels) {
+                            float panv = mFilePlaybackChannelGroups[i].params.pan[0];
+                            float left = std::cos(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
+                            float right = std::sin(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
+                            float pangain = left + right; // mono mix
+                            sendWorkBuffer.addFrom(0, 0, fileBuffer.getReadPointer(filech, 0), numSamples, pangain * fgain);
                         }
-                        filech++;
+                        filech += 1;
+                    }
+                    _lastfplaygain = mFilePlaybackChannelGroups[0].params.gain;
+                }
+                else if (sendChans >= 2) {
+                    // Group 0 is the "Full Mix" (stereo)
+                    // Individual stems are Groups 1..N
+                    int dstStereoStart = mFilePlaybackChannelGroups[0].params.panDestStartIndex;
+                    float masterGain = mFilePlaybackChannelGroups[0].params.gain; 
+                    bool masterMuted = mFilePlaybackChannelGroups[0].params.muted;
+                    bool masterSoloed = mFilePlaybackChannelGroups[0].params.soloed;
+
+                    // First pass: build the stereo downmix for all active stems
+                    if (!masterMuted && (!anyinputsoloed || masterSoloed)) {
+                        int filech = 0;
+                        for (int i=1; i < mFilePlaybackGroupCount; i++) {
+                            if (mFilePlaybackChannelGroups[i].params.muted) {
+                                filech += 1;
+                                continue;
+                            }
+                            if (anyinputsoloed && !mFilePlaybackChannelGroups[i].params.soloed) {
+                                filech += 1;
+                                continue;
+                            }
+                            float stemGain = mFilePlaybackChannelGroups[i].params.gain;
+                            if (stemGain > 0.0f && filech < fileChannels) {
+                                float panv = mFilePlaybackChannelGroups[i].params.pan[0];
+                                float left = std::cos(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
+                                float right = std::sin(juce::MathConstants<float>::pi * 0.25f * (panv + 1.0f));
+                                int dstL = dstStereoStart;
+                                int dstR = jmin(dstStereoStart + 1, sendChans - 1);
+                                
+                                // Mix with both stem gain and master gain
+                                sendWorkBuffer.addFrom(dstL, 0, fileBuffer.getReadPointer(filech, 0), numSamples, masterGain * stemGain * left);
+                                sendWorkBuffer.addFrom(dstR, 0, fileBuffer.getReadPointer(filech, 0), numSamples, masterGain * stemGain * right);
+                            }
+                            filech += 1;
+                        }
+                    }
+                    _lastfplaygain = masterGain; // for smoothing in next block
+                    
+                    // Second pass (multichannel sending of individual stems): send individual stems at channels 2+
+                    if (sendChans > 2) {
+                        int dstch = dstStereoStart + 2; // start after the master stereo pair
+                        int filech = 0;
+                        for (int i=1; i < mFilePlaybackGroupCount && dstch < sendChans; i++) {
+                            if (mFilePlaybackChannelGroups[i].params.muted || mFilePlaybackChannelGroups[i].params.gain == 0.0f) {
+                                filech += 1;
+                                continue;
+                            }
+                            if (anyinputsoloed && !mFilePlaybackChannelGroups[i].params.soloed) {
+                                filech += 1;
+                                continue;
+                            }
+                            float fgain = mFilePlaybackChannelGroups[i].params.gain;
+                            if (filech < fileChannels) {
+                                mFilePlaybackChannelGroups[i].processPan(fileBuffer, filech, sendWorkBuffer, dstch, 1, numSamples, fgain);
+                                moggStemMeterSources[i].measureBlock(fileBuffer, filech, 1);
+                                dstch++;
+                            }
+                            filech++;
+                        }
                     }
                 }
             }
         }
 
-    }
-
     bool hassoundboarddata = soundboardChannelProcessor->processAudioBlock(numSamples);
     if (hassoundboarddata && sendsoundboardaudio) {
         int startChannel = sendfileaudio ? filestartch + fileChannels : filestartch;
-        soundboardChannelProcessor->sendAudioBlock(sendWorkBuffer, numSamples, sendPanChannels, startChannel);
+        soundboardChannelProcessor->sendAudioBlock(sendWorkBuffer, numSamples, sendChans, startChannel);
     }
 
     // process metronome
@@ -8168,6 +8218,35 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
                 remote->workBuffer.clear(0, numSamples);
 
                 remote->oursink->process((float **)remote->workBuffer.getArrayOfWritePointers(), numSamples, t);
+
+                // If this is a MOGG stream, extract the stems
+                if (remote->isMogg && remote->moggStemCount > 0) {
+                    if (remote->moggStems.getNumChannels() != remote->moggStemCount || remote->moggStems.getNumSamples() < numSamples) {
+                        remote->moggStems.setSize(remote->moggStemCount, numSamples, false, false, true);
+                    }
+                    remote->moggStems.clear();
+
+                    // MOGG stems start at channel 0 of the remote send, but wait!
+                    // If they sent "Full Mix" + Stems, then Stems start at channel 2.
+                    // But our userformat layout says where they start.
+                    for (int gi=0; gi < remote->numChanGroups; ++gi) {
+                        int srcStart = remote->chanGroups[gi].params.chanStartIndex;
+                        int nch = remote->chanGroups[gi].params.numChannels;
+                        if (gi < remote->moggStemCount) {
+                            for (int c=0; c < nch; ++c) {
+                                if (srcStart + c < remote->workBuffer.getNumChannels()) {
+                                    remote->moggStems.copyFrom(gi, 0, remote->workBuffer, srcStart + c, 0, numSamples);
+                                }
+                            }
+                            // Feed the meter
+                            remote->moggStemMeterSources[gi].measureBlock(remote->moggStems, gi, 1);
+                        }
+                    }
+                    
+                    // Clear the workBuffer so the standard mixing doesn't double-dip?
+                    // No, Sonobus regular mixing uses chanGroups. 
+                    // We must ensure regular mixing doesn't add the stems again.
+                }
             }
 
             
@@ -8269,15 +8348,26 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
             {
                 // apply solo muting to the gain here
                 float adjgain = anysubsolo && !remote->chanGroups[i].params.soloed ? 0.0f : tgain;
-                // todo change dest ch target
-                int dstch = remote->chanGroups[i].params.panDestStartIndex;
-                int dstcnt = jmin(totalOutputChannels, remote->chanGroups[i].params.panDestChannels);
-                remote->chanGroups[i].processPan(remote->workBuffer, remote->chanGroups[i].params.chanStartIndex, tempBuffer, dstch, dstcnt, numSamples, adjgain);
-
-                if (doreverb) {
-                    remote->chanGroups[i].processReverbSend(remote->workBuffer, remote->chanGroups[i].params.chanStartIndex, remote->chanGroups[i].params.numChannels, mainFxBuffer, 0, fxchannels, numSamples, mainReverbEnabled, false, adjgain);
+                
+                if (remote->isMogg) {
+                    // MOGG mixing: use the extracted stems
+                    if (i < remote->moggStems.getNumChannels()) {
+                        int dstch = remote->chanGroups[i].params.panDestStartIndex;
+                        int dstcnt = jmin(totalOutputChannels, remote->chanGroups[i].params.panDestChannels);
+                        remote->chanGroups[i].processPan(remote->moggStems, i, tempBuffer, dstch, dstcnt, numSamples, adjgain);
+                    }
+                } else {
+                    int dstch = remote->chanGroups[i].params.panDestStartIndex;
+                    int dstcnt = jmin(totalOutputChannels, remote->chanGroups[i].params.panDestChannels);
+                    remote->chanGroups[i].processPan(remote->workBuffer, remote->chanGroups[i].params.chanStartIndex, tempBuffer, dstch, dstcnt, numSamples, adjgain);
                 }
 
+                if (doreverb) {
+                    if (remote->isMogg && i < remote->moggStems.getNumChannels())
+                        remote->chanGroups[i].processReverbSend(remote->moggStems, i, 1, mainFxBuffer, 0, fxchannels, numSamples, mainReverbEnabled, false, adjgain);
+                    else
+                        remote->chanGroups[i].processReverbSend(remote->workBuffer, remote->chanGroups[i].params.chanStartIndex, remote->chanGroups[i].params.numChannels, mainFxBuffer, 0, fxchannels, numSamples, mainReverbEnabled, false, adjgain);
+                }
             }
 
         }
@@ -8327,8 +8417,9 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
                                     //remote->recvPanLast[ch] = pan;
                                 }
                             } else {
-                                
-                                workBuffer.addFrom(channel, 0, crossremote->workBuffer, channel, 0, numSamples);
+                                if (channel < crossremote->workBuffer.getNumChannels()) {
+                                    workBuffer.addFrom(channel, 0, crossremote->workBuffer, channel, 0, numSamples);
+                                }
                             }
                             
                         }                        
@@ -10024,6 +10115,31 @@ bool SonobusAudioProcessor::loadURLIntoTransport (const URL& audioURL)
                                     &mDiskThread,                 // this is the background thread to use for reading-ahead
                                     reader->sampleRate,     // allows for sample rate correction
                                     reader->numChannels);
+
+        // Update MOGG stem counts and groups
+        int srcchans = reader->numChannels;
+        mFilePlaybackGroupCount = std::min(srcchans + 1, MAX_CHANGROUPS);
+        
+        // Group 0 is the Full Mix (stereo)
+        mFilePlaybackChannelGroups[0].params.numChannels = 2;
+        mFilePlaybackChannelGroups[0].params.name = "Full Mix";
+        mFilePlaybackChannelGroups[0].commitMonitorDelayParams();
+
+        for (int i=1; i < mFilePlaybackGroupCount; i++) {
+            mFilePlaybackChannelGroups[i].params.numChannels = 1;
+            mFilePlaybackChannelGroups[i].params.name = "Stem " + String(i);
+            mFilePlaybackChannelGroups[i].params.gain = 1.0f; // Reset gain for MOGG stems to full
+            mFilePlaybackChannelGroups[i].commitMonitorDelayParams();
+        }
+
+        if (mFilePlaybackGroupCount > 2) { // MOGG detected
+            if (mSendChannels.get() != 0) {
+                DBG("Auto switching to Multichannel (Match Inputs) mode for MOGG file");
+                mState.getParameter(paramSendChannels)->setValueNotifyingHost(0.0f);
+            }
+        }
+        
+        updateRemotePeerUserFormat();
 
         return true;
     }

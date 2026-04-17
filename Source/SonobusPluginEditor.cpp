@@ -810,9 +810,9 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mMainContainer->addChildComponent(mInputChannelsContainer.get());
     mInputChannelsContainer->addListener(this);
 
-    //mInputChannelsViewport = std::make_unique<Viewport>();
-    //mInputChannelsViewport->setViewedComponent(mInputChannelsContainer.get(), false);
-    //mMainContainer->addChildComponent(mInputChannelsViewport.get());
+    mInputChannelsViewport = std::make_unique<Viewport>();
+    mInputChannelsViewport->setViewedComponent(mInputChannelsContainer.get(), false);
+    mMainContainer->addAndMakeVisible(mInputChannelsViewport.get());
 
     mChatView = std::make_unique<ChatView>(processor, currConnectionInfo);
     mChatView->setVisible(false);
@@ -1871,8 +1871,8 @@ void SonobusAudioProcessorEditor::updateTransportState()
             mFileMenuButton->setVisible(false);
             mFileAreaBg->setVisible(false);
             mMoggMixerButton->setVisible(false);
-            // Close mixer if open
-            if (mMoggMixerWindow) {
+            // Close mixer if open and it's THE LOCAL ONE
+            if (mMoggMixerWindow && mMoggMixerWindow->getMixer() && mMoggMixerWindow->getMixer()->getRemotePeerIndex() == -1) {
                 mMoggMixerWindow->setVisible(false);
                 mMoggMixerWindow.reset();
             }
@@ -3250,13 +3250,24 @@ void SonobusAudioProcessorEditor::showConnectPopup(bool flag)
 
 void SonobusAudioProcessorEditor::showMoggMixer(int peerIndex)
 {
-    // Close existing window if any (of if we want multiple, we need a map)
+    // If the window is already open for this specific peer, just bring it to front
+    if (mMoggMixerWindow != nullptr && mMoggMixerWindow->getMixer() && mMoggMixerWindow->getMixer()->getRemotePeerIndex() == peerIndex) {
+        mMoggMixerWindow->toFront(true);
+        return;
+    }
+
+    // Close existing window if any (Sonobus current design handles one mixer window at a time)
     if (mMoggMixerWindow != nullptr) {
         mMoggMixerWindow.reset();
     }
 
     Component* centreRel = (peerIndex == -1) ? (Component*)mMoggMixerButton.get() : (Component*)this;
     mMoggMixerWindow = std::make_unique<MoggMixerWindow>(processor, centreRel, peerIndex);
+    
+    // Set callback to reset pointer when window is closed via the close button
+    mMoggMixerWindow->onClosed = [this]() {
+        mMoggMixerWindow.reset();
+    };
 }
 
 
@@ -4588,6 +4599,20 @@ void SonobusAudioProcessorEditor::resized()
                                            inmixminbounds.getHeight() + 5);
 
         mInputChannelsContainer->setBounds(inmixactualbounds);
+
+        // Limit the viewport height so it doesn't take over the whole screen if there are many tracks
+        int maxMixerHeight = jmin(inmixactualbounds.getHeight(), mMainViewport->getHeight() / 2);
+        if (processor.getFilePlaybackGroupCount() > 1) {
+            // If we have MOGG stems, give it a bit more space if available, but keep it constrained
+            maxMixerHeight = jmin(inmixactualbounds.getHeight(), (int)(mMainViewport->getHeight() * 0.6f));
+        }
+
+        mInputChannelsViewport->setBounds(Rectangle<int>(0, 0, inchantargwidth + 10, maxMixerHeight));
+        mInputChannelsViewport->setVisible(true);
+        inmixactualbounds.setHeight(maxMixerHeight);
+    }
+    else {
+        mInputChannelsViewport->setVisible(false);
     }
 
     int vgap = inmixactualbounds.getHeight() > 0 ?  6 : 0;
