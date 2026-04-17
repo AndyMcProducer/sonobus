@@ -1114,7 +1114,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mPlaybackSlider->setPopupDisplayEnabled(true, true, this);
         mPlaybackSlider->valueFromTextFunction = [](const String& s) -> float { return Decibels::decibelsToGain(s.getFloatValue()); };
         mPlaybackSlider->textFromValueFunction = [](float v) -> String { return Decibels::toString(Decibels::gainToDecibels(v), 1); };
-        mPlaybackSlider->onValueChange = [this] { processor.setFilePlaybackGain(mPlaybackSlider->getValue()); };
+        mPlaybackSlider->onValueChange = [this] { processor.setFilePlaybackGain(0, mPlaybackSlider->getValue()); };
         mPlaybackSlider->setWantsKeyboardFocus(true);
 
         mFileSendAudioButton = std::make_unique<SonoDrawableButton>("sendmute", DrawableButton::ButtonStyle::ImageFitted);
@@ -1139,6 +1139,18 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         auto filemenstr = TRANS("Additional file commands");
         mFileMenuButton->setTooltip(filemenstr);
         mFileMenuButton->setTitle(filemenstr);
+
+        // Mogg stem mixer button
+        mMoggMixerButton = std::make_unique<SonoDrawableButton>("moggmix", DrawableButton::ButtonStyle::ImageOnButtonBackground);
+        std::unique_ptr<Drawable> mixerimg(Drawable::createFromImageData(BinaryData::dots_svg, BinaryData::dots_svgSize));
+        mMoggMixerButton->setImages(mixerimg.get(), nullptr, nullptr, nullptr, nullptr);
+        mMoggMixerButton->setClickingTogglesState(true);
+        mMoggMixerButton->setColour(DrawableButton::backgroundOnColourId, Colour::fromFloatRGBA(0.2f, 0.5f, 0.9f, 0.7f));
+        mMoggMixerButton->setColour(DrawableButton::backgroundColourId,    Colours::transparentBlack);
+        mMoggMixerButton->setTooltip(TRANS("Open MOGG Stem Mixer"));
+        mMoggMixerButton->setTitle(TRANS("MOGG"));
+        mMoggMixerButton->addListener(this);
+        mMoggMixerButton->setVisible(false);
 
         
     }
@@ -1242,6 +1254,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mTopLevelContainer->addChildComponent(mPlaybackSlider.get());
         mTopLevelContainer->addChildComponent(mFileSendAudioButton.get());
         mTopLevelContainer->addChildComponent(mFileMenuButton.get());
+        mTopLevelContainer->addChildComponent(mMoggMixerButton.get());
     }
 
 
@@ -1827,6 +1840,7 @@ void SonobusAudioProcessorEditor::updateOptionsState(bool ignorecheck)
 void SonobusAudioProcessorEditor::updateTransportState()
 {
     if (mPlayButton) {
+        bool isMultitrack = processor.getFilePlaybackGroupCount() > 1;
         if (!mCurrentAudioFile.isEmpty()) {
 
             mPlayButton->setVisible(true);
@@ -1838,6 +1852,14 @@ void SonobusAudioProcessorEditor::updateTransportState()
             mFileSendAudioButton->setVisible(true);
             mFileMenuButton->setVisible(true);
             mFileAreaBg->setVisible(true);
+            mMoggMixerButton->setVisible(isMultitrack);
+
+            // Rebuild mixer if stem count changed
+            if (mMoggMixerWindow && mMoggMixerWindow->isVisible()) {
+                if (mMoggMixerWindow->getMixer()) {
+                    mMoggMixerWindow->getMixer()->rebuild();
+                }
+            }
         } else {
             mPlayButton->setVisible(false);
             mLoopButton->setVisible(false);
@@ -1848,11 +1870,17 @@ void SonobusAudioProcessorEditor::updateTransportState()
             mFileSendAudioButton->setVisible(false);
             mFileMenuButton->setVisible(false);
             mFileAreaBg->setVisible(false);
+            mMoggMixerButton->setVisible(false);
+            // Close mixer if open
+            if (mMoggMixerWindow) {
+                mMoggMixerWindow->setVisible(false);
+                mMoggMixerWindow.reset();
+            }
         }
 
         mPlayButton->setToggleState(processor.getTransportSource().isPlaying(), dontSendNotification);
 
-        mPlaybackSlider->setValue(processor.getFilePlaybackGain(), dontSendNotification);
+        mPlaybackSlider->setValue(processor.getFilePlaybackGain(0), dontSendNotification);
         
     }
 }
@@ -2401,6 +2429,22 @@ void SonobusAudioProcessorEditor::buttonClicked (Button* buttonThatWasClicked)
         // show file extra menu
         showFilePopupMenu(mFileMenuButton.get());
     }
+    else if (buttonThatWasClicked == mMoggMixerButton.get()) {
+        bool wantOpen = mMoggMixerButton->getToggleState();
+        if (wantOpen) {
+            showMoggMixer(-1);
+            if (mMoggMixerWindow) {
+                mMoggMixerWindow->onClosed = [this] {
+                    mMoggMixerButton->setToggleState(false, dontSendNotification);
+                    mMoggMixerWindow.reset();
+                };
+            }
+        } else {
+            if (mMoggMixerWindow) {
+                mMoggMixerWindow.reset();
+            }
+        }
+    }
 
     
     else {
@@ -2507,9 +2551,9 @@ void SonobusAudioProcessorEditor::openFileBrowser()
     mFileChooser.reset(new FileChooser(TRANS("Choose an audio file to open..."),
                                        mCurrOpenDir,
 #if (JUCE_IOS || JUCE_MAC)
-                                       "*.wav;*.flac;*.aif;*.ogg;*.mp3;*.m4a;*.caf",
+                                       "*.wav;*.flac;*.aif;*.ogg;*.mp3;*.m4a;*.caf;*.mogg;*.m0gg",
 #else
-                                       "*.wav;*.flac;*.aif;*.ogg;*.mp3",
+                                       "*.wav;*.flac;*.aif;*.ogg;*.mp3;*.mogg;*.m0gg",
 #endif
                                        true, false, getTopLevelComponent()));
     
@@ -3202,6 +3246,17 @@ void SonobusAudioProcessorEditor::showConnectPopup(bool flag)
     else {
         mConnectView->setVisible(false);
     }
+}
+
+void SonobusAudioProcessorEditor::showMoggMixer(int peerIndex)
+{
+    // Close existing window if any (of if we want multiple, we need a map)
+    if (mMoggMixerWindow != nullptr) {
+        mMoggMixerWindow.reset();
+    }
+
+    Component* centreRel = (peerIndex == -1) ? (Component*)mMoggMixerButton.get() : (Component*)this;
+    mMoggMixerWindow = std::make_unique<MoggMixerWindow>(processor, centreRel, peerIndex);
 }
 
 
@@ -5011,6 +5066,9 @@ void SonobusAudioProcessorEditor::updateLayout()
         }
             
         transportBox.items.add(FlexItem(minKnobWidth, minitemheight, *mPlaybackSlider).withMargin(0).withFlex(0));
+        transportBox.items.add(FlexItem(3, 6).withMargin(0).withFlex(0));
+        if (mMoggMixerButton->isVisible())
+            transportBox.items.add(FlexItem(mintoolwidth, minitemheight, *mMoggMixerButton).withMargin(0).withFlex(1).withMaxWidth(toolwidth));
         transportBox.items.add(FlexItem(3, 6).withMargin(0).withFlex(0));
         transportBox.items.add(FlexItem(mintoolwidth, minitemheight, *mFileSendAudioButton).withMargin(0).withFlex(1).withMaxWidth(toolwidth));
         transportBox.items.add(FlexItem(3, 6).withMargin(0).withFlex(0));

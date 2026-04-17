@@ -447,7 +447,7 @@ function(sono_add_custom_plugin_target target_name product_name formats is_instr
         JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
 	JUCE_USE_WINDOWS_MEDIA_FORMAT=1
         JUCE_LOAD_CURL_SYMBOLS_LAZILY=1
-        JUCE_ASIO=1
+        JUCE_ASIO=0
         JUCE_WASAPI=1
         JUCE_DIRECTSOUND=0
         JUCE_USE_ANDROID_OBOE=1
