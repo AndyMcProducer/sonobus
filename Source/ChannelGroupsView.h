@@ -255,6 +255,7 @@ public:
     std::unique_ptr<TextButton> soloButton;
     std::unique_ptr<TextButton> fxButton;
     std::unique_ptr<TextButton> monfxButton;
+    std::unique_ptr<TextButton> moggButton;
     std::unique_ptr<Label>  chanLabel;
     std::unique_ptr<Label>  levelLabel;
     std::unique_ptr<Slider> levelSlider;
@@ -300,6 +301,7 @@ public SonoChoiceButton::Listener,
 public GenericItemChooser::Listener,
 public ChannelGroupEffectsView::Listener,
 public ChannelGroupMonitorEffectsView::Listener,
+public SonobusAudioProcessor::MidiLearnListener,
 public MultiTimer
 {
 public:
@@ -411,6 +413,10 @@ protected:
     void showMonitorEffects(int index, bool flag, Component * fromView=nullptr);
     void showInputReverbView(bool flag, Component * fromView=nullptr);
 
+    // MIDI learn context menu for a specific stem control
+    void showFileStemMidiMenu(Component* source, SonobusAudioProcessor::MidiTargetType type, int stemIdx);
+    void midiMappingChanged() override; // from MidiLearnListener
+
     int getChanGroupFromIndex(int index);
     juce::Rectangle<int> getBoundsForChanGroup(int chgroup);
     int getChanGroupForPoint(Point<int> pos, bool inbetween);
@@ -424,7 +430,7 @@ protected:
     OwnedArray<ChannelGroupView> mChannelViews;
     std::unique_ptr<ChannelGroupView> mMainChannelView; // used for peers
 
-    std::unique_ptr<ChannelGroupView> mFileChannelView; // used for input
+    juce::OwnedArray<ChannelGroupView> mFileChannelViews; // used for input
     std::unique_ptr<ChannelGroupView> mMetChannelView; // used for input
     std::unique_ptr<ChannelGroupView> mSoundboardChannelView; // used for init
 

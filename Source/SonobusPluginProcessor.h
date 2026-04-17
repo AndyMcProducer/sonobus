@@ -179,7 +179,47 @@ public:
         String destName;
         float latencyMs = 0.0f; // one way latency from source->dest in ms
     };
-    
+
+    // =========================================================================
+    // MIDI Learn
+    // =========================================================================
+    enum MidiTargetType {
+        MidiTarget_None = 0,
+        MidiTarget_FileStemGain,   // data = stem index
+        MidiTarget_FileStemMute,   // data = stem index  (CC value >= 64 = mute, < 64 = unmute, toggle on note)
+        MidiTarget_FileStemSolo,   // data = stem index
+    };
+
+    struct MidiMapping {
+        MidiTargetType  targetType = MidiTarget_None;
+        int             targetData = 0;   // stem index etc.
+        int             ccNumber   = -1;  // -1 = not assigned
+        int             midiChannel = 0;  // 0 = any channel
+
+        bool isValid() const { return targetType != MidiTarget_None && ccNumber >= 0; }
+        String getKey() const { return String((int)targetType) + "_" + String(targetData); }
+        ValueTree getValueTree() const;
+        void setFromValueTree(const ValueTree& v);
+    };
+
+    // Add / remove / query mappings
+    void setMidiMapping(MidiTargetType type, int data, int ccNumber, int midiChannel = 0);
+    bool getMidiMapping(MidiTargetType type, int data, int& outCC, int& outChannel) const;
+    void clearMidiMapping(MidiTargetType type, int data);
+    void clearAllMidiMappings();
+
+    // Enter/exit learn mode for a specific target
+    void startMidiLearn(MidiTargetType type, int data);
+    void stopMidiLearn();
+    bool isMidiLearning() const { return mMidiLearnActive; }
+    MidiTargetType getMidiLearnTargetType() const { return mMidiLearnTargetType; }
+    int  getMidiLearnTargetData() const { return mMidiLearnTargetData; }
+
+    // Listeners notified when a mapping is captured or cleared
+    struct MidiLearnListener { virtual ~MidiLearnListener(){} virtual void midiMappingChanged() {} };
+    void addMidiLearnListener(MidiLearnListener* l)    { mMidiLearnListeners.add(l); }
+    void removeMidiLearnListener(MidiLearnListener* l) { mMidiLearnListeners.remove(l); }
+
     int32 getCurrSamplesPerBlock() const { return currSamplesPerBlock; }
     
     void changeListenerCallback (ChangeBroadcaster* source) override;
@@ -632,6 +672,9 @@ public:
     
     void setRemotePeerConnected(int index, bool active);
     bool getRemotePeerConnected(int index) const;
+
+    bool getRemotePeerIsMogg(int index) const;
+    int  getRemotePeerMoggStemCount(int index) const;
     
     bool getRemotePeerAddressInfo(int index, String & rethost, int & retport) const;
 
@@ -722,14 +765,23 @@ public:
     float getMetronomeMonitor() const;
 
 
-    void setFilePlaybackMonitorDelayParams(SonoAudio::DelayParams & params);
-    bool getFilePlaybackMonitorDelayParams(SonoAudio::DelayParams & retparams);
-    void setFilePlaybackDestStartAndCount(int start, int count);
-    bool getFilePlaybackDestStartAndCount(int & retstart, int & retcount);
-    void setFilePlaybackGain(float gain);
-    float getFilePlaybackGain() const;
-    void setFilePlaybackMonitor(float mgain);
-    float getFilePlaybackMonitor() const;
+    void setFilePlaybackMonitorDelayParams(int index, SonoAudio::DelayParams & params);
+    bool getFilePlaybackMonitorDelayParams(int index, SonoAudio::DelayParams & retparams);
+    void setFilePlaybackDestStartAndCount(int index, int start, int count);
+    bool getFilePlaybackDestStartAndCount(int index, int & retstart, int & retcount);
+    void setFilePlaybackGain(int index, float gain);
+    float getFilePlaybackGain(int index) const;
+    void setFilePlaybackPan(int index, float pan);
+    float getFilePlaybackPan(int index) const;
+    void setFilePlaybackMonitor(int index, float mgain);
+    float getFilePlaybackMonitor(int index) const;
+    void setFilePlaybackMuted(int index, bool muted);
+    bool getFilePlaybackMuted(int index) const;
+    void setFilePlaybackSoloed(int index, bool soloed);
+    bool getFilePlaybackSoloed(int index) const;
+    String getFilePlaybackChannelGroupName(int index) const;
+    
+    int getFilePlaybackGroupCount() const { return mFilePlaybackGroupCount; }
 
 
     void setLinkMonitoringDelayTimes(bool flag) { mLinkMonitoringDelayTimes = flag; }
@@ -1199,13 +1251,14 @@ private:
 
     // met and playback channel groups
     SonoAudio::ChannelGroup  mMetChannelGroup;
-    SonoAudio::ChannelGroup  mFilePlaybackChannelGroup;
+    SonoAudio::ChannelGroup  mFilePlaybackChannelGroups[MAX_CHANGROUPS];
+    int mFilePlaybackGroupCount = 1;
+
+    SonoAudio::ChannelGroup  mRecMetChannelGroup;
+    
+    SonoAudio::ChannelGroup  mRecFilePlaybackChannelGroups[MAX_CHANGROUPS];
 
     float _lastfplaygain = 0.0f;
-
-    // and a replicant one for recording purposes
-    SonoAudio::ChannelGroup  mRecMetChannelGroup;
-    SonoAudio::ChannelGroup  mRecFilePlaybackChannelGroup;
 
     
     // recording stuff
@@ -1263,6 +1316,14 @@ private:
     
     String mLangOverrideCode;
     bool mUseUniversalFont = false;
+
+    // MIDI Learn private state
+    std::map<String, MidiMapping> mMidiMappings;         // key = MidiMapping::getKey()
+    CriticalSection               mMidiMappingsLock;
+    std::atomic<bool>             mMidiLearnActive { false };
+    MidiTargetType                mMidiLearnTargetType = MidiTarget_None;
+    int                           mMidiLearnTargetData = 0;
+    ListenerList<MidiLearnListener> mMidiLearnListeners;
 
     // main state
     AudioProcessorValueTreeState mState;

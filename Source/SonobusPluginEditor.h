@@ -24,6 +24,7 @@
 #include "OptionsView.h"
 #include "ReverbView.h"
 #include "VDONinjaView.h"
+#include "MoggMixerView.h"
 
 class RandomSentenceGenerator;
 class WaveformTransportComponent;
@@ -205,6 +206,8 @@ private:
 
     void showInputReverbView(bool flag);
 
+    void showMoggMixer(int peerIndex = -1);
+
     void updateServerStatusLabel(const String & mesg, bool mainonly=true);
     void updateChannelState(bool force=false);
     bool updatePeerState(bool force=false);
@@ -359,8 +362,11 @@ private:
     std::unique_ptr<SonoDrawableButton> mLoopButton;
     std::unique_ptr<SonoDrawableButton> mFileSendAudioButton;
     std::unique_ptr<SonoDrawableButton> mFileMenuButton;
+    std::unique_ptr<SonoDrawableButton> mMoggMixerButton;  // opens floating stem mixer
     std::unique_ptr<Slider> mPlaybackSlider;
     std::unique_ptr<WaveformTransportComponent> mWaveformThumbnail;
+
+    std::unique_ptr<MoggMixerWindow> mMoggMixerWindow;
 
     std::unique_ptr<Drawable> mPeerRecImage;
 
