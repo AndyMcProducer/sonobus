@@ -423,7 +423,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mPeerLayoutMinimalButton->setRadioGroupId(PeerLayoutRadioGroupId);
 
 
-    mInGainSlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
+    mInGainSlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
+
     mInGainSlider->setName("ingain");
     mInGainSlider->setTitle(TRANS("In Level"));
     mInGainSlider->setSliderSnapsToMousePosition(processor.getSlidersSnapToMousePosition());
@@ -539,6 +540,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     std::unique_ptr<Drawable> metimg(Drawable::createFromImageData(BinaryData::met_svg, BinaryData::met_svgSize));
     mMetEnableButton->setImages(metimg.get(), nullptr, nullptr, nullptr, nullptr);
     mMetEnableButton->addListener(this);
+    mMetEnableButton->addMouseListener(this, false);
     mMetEnableButton->setClickingTogglesState(true);
     mMetEnableButton->setColour(TextButton::buttonOnColourId, Colour::fromFloatRGBA(0.2, 0.2, 0.2, 0.7));
     mMetEnableButton->setColour(TextButton::buttonColourId, Colours::transparentBlack);
@@ -556,7 +558,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mMetConfigButton->setTooltip(metoptstr);
     mMetConfigButton->setTitle(metoptstr);
 
-    mMetTempoSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxAbove);
+    mMetTempoSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxAbove);
+
     mMetTempoSlider->setName("mettempo");
     mMetTempoSlider->setTitle(TRANS("Tempo"));
     mMetTempoSlider->setSliderSnapsToMousePosition(false);
@@ -567,7 +570,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mMetTempoSlider->setWantsKeyboardFocus(true);
 
     
-    mMetLevelSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+    mMetLevelSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+
     mMetLevelSlider->setName("metvol");
     mMetLevelSlider->setTitle(TRANS("Metronome Level"));
     mMetLevelSlider->setSliderSnapsToMousePosition(false);
@@ -618,13 +622,16 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mMetSyncFileButton->setTooltip(TRANS("Synchronize metronome start with file playback"));
 
     
-    mDrySlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
-    mDrySlider->setName("dry");
+    mDrySlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
+
+    mDrySlider->setName("monitor_level");
+
     mDrySlider->setTitle(TRANS("Monitor"));
     mDrySlider->setSliderSnapsToMousePosition(processor.getSlidersSnapToMousePosition());
     mDrySlider->setScrollWheelEnabled(false);
 
-    mOutGainSlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::TextBoxRight);
+    mOutGainSlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::TextBoxRight);
+
     mOutGainSlider->setName("wet");
     mOutGainSlider->setTitle(TRANS("Out Level"));
     mOutGainSlider->setSliderSnapsToMousePosition(processor.getSlidersSnapToMousePosition());
@@ -632,6 +639,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
 
     configLevelSlider(mInGainSlider.get());
     configLevelSlider(mDrySlider.get());
+    mDrySlider->setColour(Slider::thumbColourId, Colour::fromFloatRGBA(0.9f, 0.4f, 0.1f, 1.0f));
     configLevelSlider(mOutGainSlider.get());
 
     mOutGainSlider->setTextBoxIsEditable(true);
@@ -899,6 +907,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     std::unique_ptr<Drawable> backimg(Drawable::createFromImageData(BinaryData::reset_buffer_icon_svg, BinaryData::reset_buffer_icon_svgSize));
     mBufferMinButton->setImages(backimg.get());
     mBufferMinButton->addListener(this);
+    mBufferMinButton->addMouseListener(this, false);
     mBufferMinButton->setTooltip(TRANS("Resets jitter buffer to the minimum for all."));
     mBufferMinButton->setTitle(TRANS("Reset All Jitter Buffers"));
     mBufferMinButton->setAlpha(0.8f);
@@ -964,6 +973,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mReverbEnabledButton->setColour(DrawableButton::backgroundColourId, Colours::transparentBlack);
     mReverbEnabledButton->setColour(DrawableButton::backgroundOnColourId, Colours::transparentBlack);    
     mReverbEnabledButton->addListener(this);
+    mReverbEnabledButton->addMouseListener(this, false);
     mReverbEnabledButton->setTitle(TRANS("Reverb Enabled"));
     mReverbEnableAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.getValueTreeState(), SonobusAudioProcessor::paramMainReverbEnabled, *mReverbEnabledButton);
 
@@ -977,7 +987,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
     mReverbModelChoice->addItem(TRANS("Zita"), SonobusAudioProcessor::ReverbModelZita);
 
     
-    mReverbSizeSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+    mReverbSizeSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+
     mReverbSizeSlider->setName("revsize");
     mReverbSizeSlider->setTitle(TRANS("Size"));
     mReverbSizeSlider->setSliderSnapsToMousePosition(false);
@@ -989,7 +1000,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
 
     mReverbSizeAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.getValueTreeState(), SonobusAudioProcessor::paramMainReverbSize, *mReverbSizeSlider);
 
-    mReverbLevelSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+    mReverbLevelSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+
     mReverbLevelSlider->setName("revlevel");
     mReverbLevelSlider->setTitle(TRANS("Level"));
     mReverbLevelSlider->setSliderSnapsToMousePosition(false);
@@ -1001,7 +1013,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
 
     mReverbLevelAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.getValueTreeState(), SonobusAudioProcessor::paramMainReverbLevel, *mReverbLevelSlider);
 
-    mReverbDampingSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+    mReverbDampingSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+
     mReverbDampingSlider->setName("revdamp");
     mReverbDampingSlider->setTitle(TRANS("Damping"));
     mReverbDampingSlider->setSliderSnapsToMousePosition(false);
@@ -1013,7 +1026,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
 
     mReverbDampingAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.getValueTreeState(), SonobusAudioProcessor::paramMainReverbDamping, *mReverbDampingSlider);
 
-    mReverbPreDelaySlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+    mReverbPreDelaySlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::NoTextBox);
+
     mReverbPreDelaySlider->setName("revpredel");
     mReverbPreDelaySlider->setTitle(TRANS("Pre-Delay"));
     mReverbPreDelaySlider->setSliderSnapsToMousePosition(false);
@@ -1039,6 +1053,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         std::unique_ptr<Drawable> recselimg(Drawable::createFromImageData(BinaryData::record_active_alt_svg, BinaryData::record_active_alt_svgSize));
         mRecordingButton->setImages(recimg.get(), nullptr, nullptr, nullptr, recselimg.get());
         mRecordingButton->addListener(this);
+        mRecordingButton->addMouseListener(this, false);
         mRecordingButton->setColour(DrawableButton::backgroundOnColourId, Colours::transparentBlack);
         mRecordingButton->setTooltip(TRANS("Start/Stop recording audio to file"));
         mRecordingButton->setTitle(TRANS("Record"));
@@ -1064,6 +1079,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mPlayButton->setImages(playimg.get(), nullptr, nullptr, nullptr, pauseimg.get());
         mPlayButton->setClickingTogglesState(true);
         mPlayButton->addListener(this);
+        mPlayButton->addMouseListener(this, false);
         mPlayButton->setColour(DrawableButton::backgroundOnColourId, Colours::transparentBlack);
         mPlayButton->setColour(DrawableButton::backgroundColourId, Colours::transparentBlack);
         mPlayButton->setTitle(TRANS("Play"));
@@ -1083,6 +1099,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mLoopButton->setImages(loopimg.get(), nullptr, nullptr, nullptr, nullptr);
         mLoopButton->setClickingTogglesState(true);
         mLoopButton->addListener(this);
+        mLoopButton->addMouseListener(this, false);
         mLoopButton->setColour(DrawableButton::backgroundOnColourId, Colour::fromFloatRGBA(0.6, 0.3, 0.6, 0.5));
         mLoopButton->setColour(DrawableButton::backgroundColourId, Colours::transparentBlack);
         mLoopButton->setTooltip(TRANS("Toggle loop range"));
@@ -1099,7 +1116,8 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mWaveformThumbnail->addChangeListener (this);
         mWaveformThumbnail->setFollowsTransport(false);
         
-        mPlaybackSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxRight);
+        mPlaybackSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxRight);
+
         mPlaybackSlider->setRange(0.0, 2.0, 0.0);
         mPlaybackSlider->setSkewFactor(0.5);
         mPlaybackSlider->setName("plevel");
@@ -1109,6 +1127,7 @@ SonobusAudioProcessorEditor::SonobusAudioProcessorEditor (SonobusAudioProcessor&
         mPlaybackSlider->setTextBoxIsEditable(false);
         mPlaybackSlider->setScrollWheelEnabled(false);
         configKnobSlider(mPlaybackSlider.get());
+        mPlaybackSlider->setColour(Slider::thumbColourId, Colour::fromFloatRGBA(0.9f, 0.4f, 0.1f, 1.0f));
         mPlaybackSlider->setMouseDragSensitivity(80);
         mPlaybackSlider->setTextBoxStyle(Slider::NoTextBox, true, 60, 14);
         mPlaybackSlider->setPopupDisplayEnabled(true, true, this);
@@ -1555,7 +1574,9 @@ void SonobusAudioProcessorEditor::configKnobSlider(Slider * slider)
     slider->setSliderStyle(Slider::SliderStyle::RotaryHorizontalVerticalDrag);
     slider->setTextBoxStyle(Slider::TextBoxAbove, true, 60, 14);
     slider->setMouseDragSensitivity(128);
-    slider->setScrollWheelEnabled(false);
+    slider->setScrollWheelEnabled(true);
+    slider->addMouseListener(this, false);
+
     //slider->setPopupDisplayEnabled(true, false, this);
     slider->setColour(Slider::textBoxBackgroundColourId, Colours::transparentBlack);
     slider->setColour(Slider::textBoxOutlineColourId, Colours::transparentBlack);
@@ -1573,7 +1594,9 @@ void SonobusAudioProcessorEditor::configLevelSlider(Slider * slider)
     slider->setSliderStyle(Slider::SliderStyle::LinearHorizontal);
     slider->setTextBoxStyle(Slider::TextBoxAbove, true, 50, 14);
     slider->setMouseDragSensitivity(128);
-    slider->setScrollWheelEnabled(false);
+    slider->setScrollWheelEnabled(true);
+    slider->addMouseListener(this, false);
+
     //slider->setPopupDisplayEnabled(true, false, this);
     slider->setColour(Slider::textBoxBackgroundColourId, Colours::transparentBlack);
     slider->setColour(Slider::textBoxOutlineColourId, Colours::transparentBlack);
@@ -3277,7 +3300,30 @@ void SonobusAudioProcessorEditor::sliderValueChanged (Slider* slider)
 
 void SonobusAudioProcessorEditor::mouseDown (const MouseEvent& event) 
 {
-    
+    if (event.mods.isRightButtonDown()) {
+        auto* comp = event.eventComponent;
+        SonobusAudioProcessor::MidiTargetType type = SonobusAudioProcessor::MidiTarget_None;
+        int data = 0;
+
+        if (comp == mInGainSlider.get()) type = SonobusAudioProcessor::MidiTarget_InputGain;
+        else if (comp == mOutGainSlider.get()) type = SonobusAudioProcessor::MidiTarget_OutputGain;
+        else if (comp == mDrySlider.get()) type = SonobusAudioProcessor::MidiTarget_MonitorLevel;
+        else if (comp == mMetLevelSlider.get()) type = SonobusAudioProcessor::MidiTarget_MetronomeLevel;
+        else if (comp == mInMuteButton.get()) type = SonobusAudioProcessor::MidiTarget_InputMute;
+        else if (comp == mReverbLevelSlider.get()) type = SonobusAudioProcessor::MidiTarget_FXLevel;
+        else if (comp == mPlayButton.get()) type = SonobusAudioProcessor::MidiTarget_TransportPlay;
+        else if (comp == mRecordingButton.get()) type = SonobusAudioProcessor::MidiTarget_TransportRecord;
+        else if (comp == mLoopButton.get()) type = SonobusAudioProcessor::MidiTarget_TransportLoop;
+        else if (comp == mMetEnableButton.get()) type = SonobusAudioProcessor::MidiTarget_TransportMetronome;
+        else if (comp == mBufferMinButton.get()) type = SonobusAudioProcessor::MidiTarget_ResetAllJitters;
+        else if (comp == mReverbEnabledButton.get()) type = SonobusAudioProcessor::MidiTarget_FXEnable;
+
+        if (type != SonobusAudioProcessor::MidiTarget_None) {
+            showMidiMenu(comp, type, data);
+            return;
+        }
+    }
+
     if (event.eventComponent == mSettingsButton.get()) {
         settingsWasShownOnDown = settingsCalloutBox != nullptr || (Time::getMillisecondCounter() < settingsClosedTimestamp + 500);
 
@@ -6122,5 +6168,63 @@ void SonobusAudioProcessorEditor::SonobusMenuBarModel::menuItemSelected (int men
         }
     }
 #endif
+}
+
+
+void SonobusAudioProcessorEditor::showMidiMenu(Component* source,
+                                               SonobusAudioProcessor::MidiTargetType type,
+                                               int data)
+{
+    using MidiTargetType = SonobusAudioProcessor::MidiTargetType;
+
+    int ccNum = -1, midiCh = 0;
+    bool hasMapped = processor.getMidiMapping(type, data, ccNum, midiCh);
+
+    String controlName;
+    switch (type) {
+        case MidiTargetType::MidiTarget_InputGain: controlName = TRANS("In Level"); break;
+        case MidiTargetType::MidiTarget_OutputGain: controlName = TRANS("Out Level"); break;
+        case MidiTargetType::MidiTarget_MonitorLevel: controlName = TRANS("Monitor Level"); break;
+        case MidiTargetType::MidiTarget_MetronomeLevel: controlName = TRANS("Metronome Level"); break;
+        case MidiTargetType::MidiTarget_SoundboardLevel: controlName = TRANS("Soundboard Level"); break;
+        case MidiTargetType::MidiTarget_InputMute: controlName = TRANS("In Mute"); break;
+        case MidiTargetType::MidiTarget_FXLevel: controlName = TRANS("FX Level"); break;
+        case MidiTargetType::MidiTarget_FXEnable: controlName = TRANS("FX Monitor"); break;
+        case MidiTargetType::MidiTarget_FullMixMonitorLevel: controlName = TRANS("Full Mix Monitor"); break;
+        case MidiTargetType::MidiTarget_TransportPlay: controlName = TRANS("Play"); break;
+        case MidiTargetType::MidiTarget_TransportRecord: controlName = TRANS("Record"); break;
+        case MidiTargetType::MidiTarget_TransportLoop: controlName = TRANS("Loop"); break;
+        case MidiTargetType::MidiTarget_TransportMetronome: controlName = TRANS("Metronome Toggle"); break;
+        case MidiTargetType::MidiTarget_ResetAllJitters: controlName = TRANS("Reset Jitters"); break;
+        default: controlName = TRANS("Control"); break;
+
+    }
+
+    PopupMenu m;
+    if (processor.isMidiLearning() &&
+        processor.getMidiLearnTargetType() == type &&
+        processor.getMidiLearnTargetData() == data) {
+        m.addItem(1, String(TRANS("Cancel MIDI Learn")), true, false);
+    } else {
+        m.addItem(1, String(TRANS("MIDI Learn: ")) + controlName, true, false);
+    }
+
+    String forgetText = TRANS("MIDI Forget");
+    if (hasMapped) forgetText += " (CC " + String(ccNum) + ", Ch " + String(midiCh) + ")";
+    m.addItem(2, forgetText, hasMapped, false);
+
+    m.showMenuAsync(PopupMenu::Options().withMousePosition(),
+        [this, type, data, hasMapped](int result) {
+            if (result == 1) {
+                if (processor.isMidiLearning()) {
+                    processor.stopMidiLearn();
+                } else {
+                    processor.startMidiLearn(type, data);
+                }
+            } else if (result == 2 && hasMapped) {
+                processor.clearMidiMapping(type, data);
+            }
+        });
+
 }
 

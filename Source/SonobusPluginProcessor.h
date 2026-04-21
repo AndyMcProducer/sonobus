@@ -113,7 +113,7 @@ inline bool operator<(const AooServerConnectionInfo& lhs, const AooServerConnect
 //==============================================================================
 /**
 */
-class SonobusAudioProcessor  : public AudioProcessor, public AudioProcessorValueTreeState::Listener, public ChangeListener
+class SonobusAudioProcessor  : public AudioProcessor, public AudioProcessorValueTreeState::Listener, public ChangeListener, public MidiInputCallback
 {
 public:
     //==============================================================================
@@ -149,7 +149,8 @@ public:
         FileFormatAuto,
         FileFormatFLAC,
         FileFormatWAV,
-        FileFormatOGG
+        FileFormatOGG,
+        FileFormatMOGG
     };
 
     enum PeerDisplayMode {
@@ -186,9 +187,28 @@ public:
     enum MidiTargetType {
         MidiTarget_None = 0,
         MidiTarget_FileStemGain,   // data = stem index
-        MidiTarget_FileStemMute,   // data = stem index  (CC value >= 64 = mute, < 64 = unmute, toggle on note)
+        MidiTarget_FileStemMute,   // data = stem index
         MidiTarget_FileStemSolo,   // data = stem index
+        MidiTarget_InputGain,
+        MidiTarget_OutputGain,
+        MidiTarget_PeerLevel,      // data = peer index
+        MidiTarget_PeerPan,        // data = peer index
+        MidiTarget_PeerMute,       // data = peer index
+        MidiTarget_MonitorLevel,
+        MidiTarget_MetronomeLevel,
+        MidiTarget_InputMute,
+        MidiTarget_SoundboardLevel,
+        MidiTarget_FXLevel,
+        MidiTarget_FullMixMonitorLevel,
+        MidiTarget_TransportPlay,
+        MidiTarget_TransportRecord,
+        MidiTarget_TransportLoop,
+        MidiTarget_TransportMetronome,
+        MidiTarget_ResetAllJitters,
+        MidiTarget_FileStemMonitor,
+        MidiTarget_FXEnable
     };
+
 
     struct MidiMapping {
         MidiTargetType  targetType = MidiTarget_None;
@@ -229,6 +249,20 @@ public:
     //==============================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+
+    void handleIncomingMidiMessage (MidiInput* source, const MidiMessage& message) override;
+
+    void setMidiRelayDevice (const String& name);
+    void setMidiLearnDevice (const String& name);
+    String getMidiRelayDevice() const { return mMidiRelayDevice; }
+    String getMidiLearnDevice() const { return mMidiLearnDevice; }
+
+    void setRemotePeerMidiRelay(int peerIndex, bool enabled);
+    bool getRemotePeerMidiRelay(int peerIndex) const;
+
+    void sendMidiToPeers (const MidiMessage& message);
+
+
 
    #ifndef JucePlugin_PreferredChannelConfigurations
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
@@ -294,7 +328,9 @@ public:
     static String paramSendMetAudio;
     static String paramSendFileAudio;
     static String paramSendSoundboardAudio;
+    static String paramSoundboardGain;
     static String paramHearLatencyTest;
+
     static String paramMetIsRecorded;
     static String paramMainReverbEnabled;
     static String paramMainReverbLevel;
@@ -882,7 +918,7 @@ public:
 
 private:
     //==============================================================================
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonobusAudioProcessor)
+
     
     struct PeerStateCache
     {
@@ -1282,7 +1318,11 @@ private:
 
     std::atomic<bool> writingPossible = { false };
     std::atomic<bool> userWritingPossible = { false };
+    std::atomic<bool> moggWritingPossible = { false };
     int totalRecordingChannels = 2;
+    int moggSelfChannels = 2;
+    AudioSampleBuffer moggWorkBuffer;
+    Array<int> moggPeerChannelStartIndices;
     int64 mElapsedRecordSamples = 0;
     std::unique_ptr<TimeSliceThread> recordingThread;
     std::unique_ptr<AudioFormatWriter::ThreadedWriter> threadedMixWriter;
@@ -1325,15 +1365,26 @@ private:
     // MIDI Learn private state
     std::map<String, MidiMapping> mMidiMappings;         // key = MidiMapping::getKey()
     CriticalSection               mMidiMappingsLock;
-    std::atomic<bool>             mMidiLearnActive { false };
+    std::atomic<bool>            mMidiLearnActive { false };
     MidiTargetType                mMidiLearnTargetType = MidiTarget_None;
     int                           mMidiLearnTargetData = 0;
     ListenerList<MidiLearnListener> mMidiLearnListeners;
+
+    String mMidiRelayDevice;
+    String mMidiLearnDevice;
+    std::unique_ptr<MidiInput> mMidiRelayInput;
+    std::unique_ptr<MidiInput> mMidiLearnInput;
+    
+    bool mRemotePeerMidiRelay[MAX_PEERS];
+    MidiBuffer mIncomingMidiFromPeers;
+    bool mIncomingMidiAvailable = false;
+
 
     // main state
     AudioProcessorValueTreeState mState;
     UndoManager                  mUndoManager;
 
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonobusAudioProcessor)
 };
 
 

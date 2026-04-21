@@ -8,6 +8,8 @@
 
 #include "SonobusPluginProcessor.h"
 #include "SonoLookAndFeel.h"
+#include "SonoSlider.h"
+
 #include "SonoChoiceButton.h"
 #include "SonoDrawableButton.h"
 #include "GenericItemChooser.h"
@@ -256,12 +258,15 @@ public:
     std::unique_ptr<TextButton> fxButton;
     std::unique_ptr<TextButton> monfxButton;
     std::unique_ptr<TextButton> moggButton;
+    std::unique_ptr<TextButton> midiButton;
     std::unique_ptr<Label>  chanLabel;
+
     std::unique_ptr<Label>  levelLabel;
-    std::unique_ptr<Slider> levelSlider;
-    std::unique_ptr<Slider> monitorSlider;
+    std::unique_ptr<SonoSlider> levelSlider;
+    std::unique_ptr<SonoSlider> monitorSlider;
     std::unique_ptr<Label>  panLabel;
-    std::unique_ptr<Slider> panSlider;
+    std::unique_ptr<SonoSlider> panSlider;
+
     std::unique_ptr<SonoDrawableButton> linkButton;
     std::unique_ptr<SonoDrawableButton> monoButton;
     std::unique_ptr<SonoDrawableButton> destButton;
@@ -441,8 +446,9 @@ protected:
 
 
 
-    std::unique_ptr<Slider> mInGainSlider;
+    std::unique_ptr<SonoSlider> mInGainSlider;
     std::unique_ptr<TextButton> mAddButton;
+
     std::unique_ptr<TextButton> mClearButton;
     std::unique_ptr<TextButton> mInReverbButton;
     std::unique_ptr<TextButton> mMonDelayButton;

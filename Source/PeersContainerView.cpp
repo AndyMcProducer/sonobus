@@ -163,8 +163,8 @@ void PeerViewInfo::resized()
     }
 }
 
-/// --------------------------------------------
-#pragma PendingPeerViewInfo
+// --------------------------------------------
+// PendingPeerViewInfo
 
 
 PendingPeerViewInfo::PendingPeerViewInfo()
@@ -431,8 +431,12 @@ PeerViewInfo * PeersContainerView::createPeerViewInfo()
     pvf->staticAddrLabel->setFont(13);
     
     
-    pvf->sendMutedButton = std::make_unique<ToggleButton>(TRANS("Disable Sending"));
+    pvf->sendMutedButton = std::make_unique<ToggleButton>(TRANS("Disable Sending Audio"));
     pvf->sendMutedButton->addListener(this);
+
+    pvf->midiRelayButton = std::make_unique<ToggleButton>(TRANS("Send MIDI"));
+    pvf->midiRelayButton->addListener(this);
+    pvf->midiRelayButton->setTooltip(TRANS("Enable relaying MIDI from your selected MIDI relay input to this user."));
 
     pvf->recvMutedButton = std::make_unique<TextButton>(TRANS("MUTE"));
     pvf->recvMutedButton->addListener(this);
@@ -895,6 +899,7 @@ void PeersContainerView::rebuildPeerViews()
         pvf->sendOptionsContainer->addAndMakeVisible(pvf->changeAllFormatButton.get());
         pvf->sendOptionsContainer->addAndMakeVisible(pvf->staticFormatChoiceLabel.get());
         pvf->sendOptionsContainer->addAndMakeVisible(pvf->sendMutedButton.get());
+        pvf->sendOptionsContainer->addAndMakeVisible(pvf->midiRelayButton.get());
         pvf->sendOptionsContainer->addAndMakeVisible(pvf->optionsRemoveButton.get());
         pvf->sendOptionsContainer->addAndMakeVisible(pvf->optionsBlockButton.get());
 
@@ -1203,6 +1208,11 @@ void PeersContainerView::updateLayout()
         pvf->optionsSendMutedBox.items.add(FlexItem(3, 12));
         pvf->optionsSendMutedBox.items.add(FlexItem(minSmallButtonWidth, minitemheight, *pvf->optionsBlockButton).withMargin(0).withFlex(0));
 
+        pvf->optionsMidiRelayBox.items.clear();
+        pvf->optionsMidiRelayBox.flexDirection = FlexBox::Direction::row;
+        pvf->optionsMidiRelayBox.items.add(FlexItem(5, 12));
+        pvf->optionsMidiRelayBox.items.add(FlexItem(100, minitemheight, *pvf->midiRelayButton).withMargin(0).withFlex(1));
+
         
         pvf->optionsChangeAllQualBox.items.clear();
         pvf->optionsChangeAllQualBox.flexDirection = FlexBox::Direction::row;
@@ -1242,6 +1252,8 @@ void PeersContainerView::updateLayout()
         pvf->sendOptionsBox.items.add(FlexItem(100, minitemheight-10,  pvf->optionsChangeAllQualBox).withMargin(2).withFlex(0));
         pvf->sendOptionsBox.items.add(FlexItem(4, 4));
         pvf->sendOptionsBox.items.add(FlexItem(100, minitemheight, pvf->optionsSendMutedBox).withMargin(0).withFlex(0));
+        pvf->sendOptionsBox.items.add(FlexItem(4, 4));
+        pvf->sendOptionsBox.items.add(FlexItem(100, minitemheight, pvf->optionsMidiRelayBox).withMargin(0).withFlex(0));
 
 
         pvf->recvbox.items.clear();
@@ -1761,6 +1773,8 @@ void PeersContainerView::updatePeerViews(int specific)
         pvf->changeAllFormatButton->setToggleState(processor.getChangingDefaultAudioCodecSetsExisting(), dontSendNotification);
 
         pvf->changeAllRecvFormatButton->setToggleState(processor.getChangingDefaultRecvAudioCodecSetsExisting(), dontSendNotification);
+        pvf->midiRelayButton->setToggleState(processor.getRemotePeerMidiRelay(i), dontSendNotification);
+        pvf->sendMutedButton->setToggleState(!processor.getRemotePeerSendAllow(i), dontSendNotification);
 
         pvf->sendActualBitrateLabel->setText(sendtext, dontSendNotification);
         pvf->recvActualBitrateLabel->setText(recvtext, dontSendNotification);
@@ -1862,7 +1876,13 @@ void PeersContainerView::updatePeerViews(int specific)
         
         if (pinfo.second.failed) {
             if (pinfo.second.blocked) {
-                ppvf->messageLabel->setText(TRANS("User BLOCKED from address: ") + pinfo.second.address, dontSendNotification);
+                String maskedAddr = pinfo.second.address;
+                StringArray parts;
+                parts.addTokens(maskedAddr, ".", "");
+                if (parts.size() == 4) {
+                    maskedAddr = parts[0] + "." + parts[1] + ".x.x";
+                }
+                ppvf->messageLabel->setText(TRANS("User BLOCKED from address: ") + maskedAddr, dontSendNotification);
                 ppvf->removeButton->setVisible(true);
                 ppvf->unblockButton->setVisible(true);
             }
@@ -2023,6 +2043,10 @@ void PeersContainerView::buttonClicked (Button* buttonThatWasClicked)
                     processor.setRemotePeerSendAllow(i, false);
                 }
             }
+            return;
+        }
+        else if (pvf->midiRelayButton.get() == buttonThatWasClicked) {
+            processor.setRemotePeerMidiRelay(i, pvf->midiRelayButton->getToggleState());
             return;
         }
         else if (pvf->recvMutedButton.get() == buttonThatWasClicked) {
@@ -2279,7 +2303,7 @@ void PeersContainerView::showSendOptions(int dindex, bool flag, Component * from
 #if JUCE_IOS || JUCE_ANDROID
         const int defHeight = 144;
 #else
-        const int defHeight = 116;
+        const int defHeight = 144;
 #endif
         
         
