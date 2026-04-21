@@ -424,7 +424,8 @@ void ChannelGroupEffectsView::effectsHeaderClicked(EffectsBaseView *comp)
 }
 
 
-#pragma ChannelGroupMonitorEffectsView
+// --------------------------------------------
+// ChannelGroupMonitorEffectsView
 
 ChannelGroupMonitorEffectsView::ChannelGroupMonitorEffectsView(SonobusAudioProcessor& proc, bool peermode)
 : Component(), peerMode(peermode), processor(proc)
@@ -741,7 +742,8 @@ void ChannelGroupMonitorEffectsView::effectsHeaderClicked(EffectsBaseView *comp)
     }
 }
 
-#pragma ChannelGroupReverbEffectsView
+// --------------------------------------------
+// ChannelGroupReverbEffectsView
 
 ChannelGroupReverbEffectsView::ChannelGroupReverbEffectsView(SonobusAudioProcessor& proc)
 : Component(), processor(proc)
@@ -845,7 +847,8 @@ void ChannelGroupReverbEffectsView::effectsHeaderClicked(EffectsBaseView *comp)
 }
 
 
-#pragma ChannelGroupView
+// --------------------------------------------
+// ChannelGroupView
 
 
 ChannelGroupView::ChannelGroupView() : smallLnf(12), medLnf(14), sonoSliderLNF(12), panSliderLNF(12)
@@ -948,11 +951,14 @@ ChannelGroupsView::ChannelGroupsView(SonobusAudioProcessor& proc, bool peerMode,
     //bgColor = Colour::fromFloatRGBA(0.045f, 0.045f, 0.05f, 1.0f);
     bgColor = Colour::fromFloatRGBA(0.08f, 0.045f, 0.08f, 1.0f);
 
-    mInGainSlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
+    mInGainSlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::TextBoxAbove);
+
     mInGainSlider->setName("ingain");
     mInGainSlider->setSliderSnapsToMousePosition(processor.getSlidersSnapToMousePosition());
     mInGainSlider->setTextBoxIsEditable(true);
-    mInGainSlider->setScrollWheelEnabled(false);
+    mInGainSlider->setScrollWheelEnabled(true);
+    mInGainSlider->addMouseListener(this, false);
+
 
     mAddButton = std::make_unique<TextButton>("+");
     mAddButton->setTitle(TRANS("Add Input Group"));
@@ -1044,7 +1050,13 @@ void ChannelGroupsView::showFileStemMidiMenu(Component* source,
         case MidiTargetType::MidiTarget_FileStemGain: controlName = "Fader " + String(stemIdx+1); break;
         case MidiTargetType::MidiTarget_FileStemMute: controlName = "Mute " + String(stemIdx+1);  break;
         case MidiTargetType::MidiTarget_FileStemSolo: controlName = "Solo " + String(stemIdx+1);  break;
-        default: controlName = "Control"; break;
+        case MidiTargetType::MidiTarget_MetronomeLevel: controlName = TRANS("Metronome Level"); break;
+        case MidiTargetType::MidiTarget_SoundboardLevel: controlName = TRANS("Soundboard Level"); break;
+        case MidiTargetType::MidiTarget_MonitorLevel: controlName = TRANS("Monitor Level"); break;
+        case MidiTargetType::MidiTarget_FileStemMonitor: controlName = (stemIdx == 0 ? TRANS("Full Mix Monitor") : "Monitor " + String(stemIdx+1)); break;
+        case MidiTargetType::MidiTarget_InputGain: controlName = TRANS("In Level"); break;
+        case MidiTargetType::MidiTarget_InputMute: controlName = TRANS("In Mute"); break;
+        default: controlName = TRANS("Control"); break;
     }
 
     PopupMenu m;
@@ -1056,25 +1068,24 @@ void ChannelGroupsView::showFileStemMidiMenu(Component* source,
         m.addItem(1, String(TRANS("MIDI Learn: ")) + controlName, true, false);
     }
 
-    if (hasMapped) {
-        m.addItem(2, String(TRANS("Clear MIDI Assignment")) +
-                     " (CC " + String(ccNum) + ", Ch " + String(midiCh) + ")", true, false);
-    }
+    String forgetText = TRANS("MIDI Forget");
+    if (hasMapped) forgetText += " (CC " + String(ccNum) + ", Ch " + String(midiCh) + ")";
+    m.addItem(2, forgetText, hasMapped, false);
 
-    m.showMenuAsync(PopupMenu::Options().withTargetComponent(source),
+
+    m.showMenuAsync(PopupMenu::Options().withMousePosition(),
         [this, type, stemIdx, hasMapped](int result) {
             if (result == 1) {
                 if (processor.isMidiLearning()) {
                     processor.stopMidiLearn();
                 } else {
                     processor.startMidiLearn(type, stemIdx);
-                    // Show a brief indication — update tooltip of source
-                    // (the mapping will be applied on next incoming CC)
                 }
             } else if (result == 2 && hasMapped) {
                 processor.clearMidiMapping(type, stemIdx);
             }
         });
+
 }
 
 void ChannelGroupsView::configLevelSlider(Slider * slider, bool monmode)
@@ -1098,8 +1109,10 @@ void ChannelGroupsView::configLevelSlider(Slider * slider, bool monmode)
     slider->setDoubleClickReturnValue(true, 1.0);
     slider->setTextBoxIsEditable(true);
     slider->setSliderSnapsToMousePosition(processor.getSlidersSnapToMousePosition());
-    slider->setScrollWheelEnabled(false);
+    slider->setScrollWheelEnabled(true);
+    slider->addMouseListener(this, false);
     slider->setWantsKeyboardFocus(true);
+
     slider->valueFromTextFunction = [](const String& s) -> float { return Decibels::decibelsToGain(s.getFloatValue()); };
 
     if (mPeerMode) {
@@ -1393,14 +1406,16 @@ ChannelGroupView * ChannelGroupsView::createChannelGroupView(bool first)
     pvf->chanLabel->setJustificationType(Justification::centredLeft);
 
     
-    pvf->levelSlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::TextBoxRight);
+    pvf->levelSlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::TextBoxRight);
+
     pvf->levelSlider->setName("level");
     pvf->levelSlider->addListener(this);
 
     configLevelSlider(pvf->levelSlider.get(), false);
     pvf->levelSlider->setLookAndFeel(&pvf->sonoSliderLNF);
 
-    pvf->monitorSlider     = std::make_unique<Slider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxRight);
+    pvf->monitorSlider     = std::make_unique<SonoSlider>(Slider::RotaryHorizontalVerticalDrag,  Slider::TextBoxRight);
+
     pvf->monitorSlider->setName("monitor");
     pvf->monitorSlider->addListener(this);
 
@@ -1415,7 +1430,8 @@ ChannelGroupView * ChannelGroupsView::createChannelGroupView(bool first)
     pvf->panLabel->setJustificationType(Justification::centredTop);
     pvf->panLabel->setAccessible(false);
 
-    pvf->panSlider     = std::make_unique<Slider>(Slider::LinearHorizontal,  Slider::NoTextBox);
+    pvf->panSlider     = std::make_unique<SonoSlider>(Slider::LinearHorizontal,  Slider::NoTextBox);
+
     //pvf->panSlider->setTextBoxStyle(Slider::TextBoxAbove, true, 60, 12);
     pvf->panSlider->setTitle(TRANS("Pan"));
     pvf->panSlider->setName(first ? "firstpan1": "pan1");
@@ -1426,9 +1442,11 @@ ChannelGroupView * ChannelGroupsView::createChannelGroupView(bool first)
     pvf->panSlider->setDoubleClickReturnValue(true, 0.0);
     pvf->panSlider->setTextBoxIsEditable(true);
     pvf->panSlider->setSliderSnapsToMousePosition(false);
-    pvf->panSlider->setScrollWheelEnabled(false);
+    pvf->panSlider->setScrollWheelEnabled(true);
+    pvf->panSlider->addMouseListener(this, false);
     pvf->panSlider->setMouseDragSensitivity(100);
     pvf->panSlider->setWantsKeyboardFocus(true);
+
 
     pvf->panSlider->textFromValueFunction =  [](double v) -> String { if (fabs(v) < 0.01) return String(TRANS("Pan: Center")); return String(TRANS("Pan: ")) +  String((int)rint(abs(v*100.0f))) + ((v > 0 ? "% R" : "% L")) ; };
     pvf->panSlider->valueFromTextFunction =  [](const String& s) -> double { return s.getDoubleValue()*1e-2f; };
@@ -1446,7 +1464,15 @@ ChannelGroupView * ChannelGroupsView::createChannelGroupView(bool first)
     pvf->moggButton->setColour(TextButton::textColourOnId, Colours::white);
     pvf->moggButton->setConnectedEdges(Button::ConnectedOnLeft | Button::ConnectedOnRight | Button::ConnectedOnTop | Button::ConnectedOnBottom);
 
+    pvf->midiButton = std::make_unique<TextButton>("MIDI");
+    pvf->midiButton->addListener(this);
+    pvf->midiButton->setClickingTogglesState(true);
+    pvf->midiButton->setTooltip(TRANS("Relay MIDI data to this peer"));
+    pvf->midiButton->setColour(TextButton::buttonOnColourId, Colours::orange);
+
     std::unique_ptr<Drawable> destimg(Drawable::createFromImageData(BinaryData::chevron_forward_svg, BinaryData::chevron_forward_svgSize));
+
+
     std::unique_ptr<Drawable> linkimg(Drawable::createFromImageData(BinaryData::link_svg, BinaryData::link_svgSize));
     std::unique_ptr<Drawable> trirightimg(Drawable::createFromImageData(BinaryData::expand_arrow_inactive_svg, BinaryData::expand_arrow_inactive_svgSize));
     std::unique_ptr<Drawable> triimg(Drawable::createFromImageData(BinaryData::expand_arrow_active_svg, BinaryData::expand_arrow_active_svgSize));
@@ -2628,8 +2654,9 @@ void ChannelGroupsView::updateLayoutForInput(bool notify)
 
                 pvf->monbox.items.add(FlexItem(monsliderwidth, minitemheight, *pvf->monitorSlider).withMargin(0).withFlex(0));
                 pvf->monbox.items.add(FlexItem(2, 3));
-                pvf->monbox.items.add(FlexItem(mutebuttwidth, minitemheight, *pvf->monfxButton).withMargin(0).withFlex(0));
-                pvf->monbox.items.add(FlexItem(2, 3));
+                pvf->monbox.items.add(FlexItem(mutebuttwidth, minitemheight, *pvf->soloButton).withMargin(2).withFlex(0));
+                pvf->monbox.items.add(FlexItem(mutebuttwidth, minitemheight, *pvf->midiButton).withMargin(2).withFlex(0));
+                pvf->monbox.items.add(FlexItem(mutebuttwidth, minitemheight, *pvf->moggButton).withMargin(2).withFlex(0));
 
                 if (destbuttvisible) {
                     pvf->monbox.items.add(FlexItem(destbuttwidth, minitemheight, *pvf->destButton).withMargin(0).withFlex(0));
@@ -3131,6 +3158,8 @@ void ChannelGroupsView::updatePeerModeChannelViews(int specific)
 
     mMainChannelView->muteButton->setToggleState(mainmuted , dontSendNotification);
     mMainChannelView->soloButton->setToggleState(mainsoloed , dontSendNotification);
+    mMainChannelView->midiButton->setToggleState(processor.getRemotePeerMidiRelay(mPeerIndex), dontSendNotification);
+
 
     if (!mMainChannelView->levelSlider->isMouseOverOrDragging()) {
         mMainChannelView->levelSlider->setValue(processor.getRemotePeerLevelGain(mPeerIndex), dontSendNotification);
@@ -4482,7 +4511,56 @@ bool ChannelGroupsView::isDraggable(Component * comp) const
 
 void ChannelGroupsView::mouseDown (const MouseEvent& event)
 {
+    if (event.mods.isRightButtonDown()) {
+        auto * comp = event.eventComponent;
+        ChannelGroupView * pvf = nullptr;
+        int group = -1;
+        
+        if (mMainChannelView && (comp == mMainChannelView.get() || mMainChannelView->isParentOf(comp))) {
+            pvf = mMainChannelView.get();
+            group = -1;
+        } else {
+            for (int i=0; i < mChannelViews.size(); ++i) {
+                if (comp->isParentOf(mChannelViews[i]) || comp == mChannelViews[i]) {
+                    pvf = mChannelViews[i];
+                    group = i;
+                    break;
+                }
+            }
+            if (!pvf) {
+                if (mMetChannelView && (comp == mMetChannelView.get() || mMetChannelView->isParentOf(comp))) {
+                    pvf = mMetChannelView.get();
+                    group = -2;
+                } else if (mSoundboardChannelView && (comp == mSoundboardChannelView.get() || mSoundboardChannelView->isParentOf(comp))) {
+                    pvf = mSoundboardChannelView.get();
+                    group = -3;
+                }
+            }
+        }
+
+        if (pvf) {
+            SonobusAudioProcessor::MidiTargetType type = SonobusAudioProcessor::MidiTarget_None;
+            int data = (group >= 0 && mPeerMode) ? mPeerIndex : group;
+
+            if (comp == pvf->levelSlider.get()) {
+                if (group == -2) type = SonobusAudioProcessor::MidiTarget_MetronomeLevel;
+                else if (group == -3) type = SonobusAudioProcessor::MidiTarget_SoundboardLevel;
+                else type = mPeerMode ? SonobusAudioProcessor::MidiTarget_PeerLevel : SonobusAudioProcessor::MidiTarget_InputGain;
+            }
+            else if (comp == pvf->panSlider.get()) type = SonobusAudioProcessor::MidiTarget_PeerPan;
+            else if (comp == pvf->monitorSlider.get()) type = SonobusAudioProcessor::MidiTarget_MonitorLevel;
+            else if (comp == pvf->muteButton.get()) type = mPeerMode ? SonobusAudioProcessor::MidiTarget_PeerMute : SonobusAudioProcessor::MidiTarget_InputMute;
+
+            if (type != SonobusAudioProcessor::MidiTarget_None) {
+                showFileStemMidiMenu(comp, type, data);
+                return;
+            }
+        }
+    }
+
+
     if (mMainChannelView) {
+
         if (event.eventComponent == mMainChannelView->meter.get()) {
             clearClipIndicators();
             return;
@@ -4515,6 +4593,11 @@ void ChannelGroupsView::mouseDown (const MouseEvent& event)
             if (event.eventComponent == v->levelSlider.get()) {
                 showFileStemMidiMenu(v->levelSlider.get(),
                     SonobusAudioProcessor::MidiTarget_FileStemGain, fv);
+                return;
+            }
+            if (event.eventComponent == v->monitorSlider.get()) {
+                showFileStemMidiMenu(v->monitorSlider.get(),
+                    SonobusAudioProcessor::MidiTarget_FileStemMonitor, fv);
                 return;
             }
         }

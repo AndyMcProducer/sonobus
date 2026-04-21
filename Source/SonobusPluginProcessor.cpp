@@ -62,7 +62,9 @@ String SonobusAudioProcessor::paramSendChannels    ("sendchannels");
 String SonobusAudioProcessor::paramSendMetAudio    ("sendmetaudio");
 String SonobusAudioProcessor::paramSendFileAudio    ("sendfileaudio");
 String SonobusAudioProcessor::paramSendSoundboardAudio    ("sendsoundboardaudio");
+String SonobusAudioProcessor::paramSoundboardGain    ("soundboardgain");
 String SonobusAudioProcessor::paramHearLatencyTest   ("hearlatencytest");
+
 String SonobusAudioProcessor::paramMetIsRecorded   ("metisrecorded");
 String SonobusAudioProcessor::paramMainReverbEnabled  ("mainreverbenabled");
 String SonobusAudioProcessor::paramMainReverbLevel  ("nmainreverblevel");
@@ -369,6 +371,8 @@ struct SonobusAudioProcessor::RemotePeer {
     int moggStemCount = 0;
     AudioSampleBuffer moggStems;
 
+    int moggStartChannel = -1;
+
     std::unique_ptr<AudioFormatWriter::ThreadedWriter> fileWriter;
 
     ReadWriteLock    sinkLock;
@@ -539,7 +543,7 @@ enum {
     OutMixBusIndex = 0,
     OutSelfBusIndex,
     OutUserBaseBusIndex,
-    OutUserLastBusIndex = 9
+    OutUserLastBusIndex = 15
 };
 
 #if JUCE_IOS
@@ -565,34 +569,24 @@ SonobusAudioProcessor::BusesProperties SonobusAudioProcessor::getDefaultLayout()
         props = props.withInput ("Aux 1 In", AudioChannelSet::mono(), ALTBUS_ACTIVE);
     }
     else if (plugtype == AudioProcessor::wrapperType_VST) {
-        // no multi-bus outputs for now for VST2, so it works in OBS
+        // no extra inputs for VST2
     }
-    else if (plugtype != AudioProcessor::wrapperType_Standalone){
-        // throw in some input sidechains
-        props = props.withInput  ("Aux 1 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 2 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 3 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 4 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 5 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 6 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 7 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withInput  ("Aux 8 In",  AudioChannelSet::stereo(), ALTBUS_ACTIVE);
+    else if (plugtype != AudioProcessor::wrapperType_Standalone) {
+        for (int i=1; i <= 7; ++i) {
+            props = props.withInput ("Aux " + String(i) + " In", AudioChannelSet::stereo(), ALTBUS_ACTIVE);
+        }
     }
 
     // outputs
     if (plugtype == AudioProcessor::wrapperType_VST) {
         // no multi-bus outputs for now for VST2, so it works in OBS
     }
-    else if (plugtype != AudioProcessor::wrapperType_Standalone){
-        props = props.withOutput ("Aux 1 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 2 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 3 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 4 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 5 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 6 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 7 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE)
-        .withOutput ("Aux 8 Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE);
+    else if (plugtype != AudioProcessor::wrapperType_Standalone) {
+        for (int i=1; i <= 15; ++i) {
+            props = props.withOutput ("Aux " + String(i) + " Out", AudioChannelSet::stereo(), ALTBUS_ACTIVE);
+        }
     }
+
 
 
     return props;
@@ -648,6 +642,10 @@ mState (*this, &mUndoManager, "SonoBusAoO",
 
     std::make_unique<AudioParameterBool>(ParameterID(paramSendFileAudio, 1), TRANS ("Send Playback Audio"), mSendPlaybackAudio.get()),
     std::make_unique<AudioParameterBool>(ParameterID(paramSendSoundboardAudio, 1), TRANS ("Send Soundboard Audio"), mSendSoundboardAudio.get()),
+    std::make_unique<AudioParameterFloat>(ParameterID(paramSoundboardGain, 1),     TRANS ("Soundboard Gain"),    NormalisableRange<float>(0.0, 2.0, 0.0, 0.5), 1.0f, "", AudioProcessorParameter::genericParameter,
+                                          [](float v, int maxlen) -> String { return Decibels::toString(Decibels::gainToDecibels(v), 1); },
+                                          [](const String& s) -> float { return Decibels::decibelsToGain(s.getFloatValue()); }),
+
     std::make_unique<AudioParameterBool>(ParameterID(paramHearLatencyTest, 1), TRANS ("Hear Latency Test"), mHearLatencyTest.get()),
     std::make_unique<AudioParameterBool>(ParameterID(paramMetIsRecorded, 1), TRANS ("Record Metronome to File"), mMetIsRecorded.get()),
     std::make_unique<AudioParameterBool>(ParameterID(paramMainReverbEnabled, 1), TRANS ("Main Reverb Enabled"), mMainReverbEnabled.get()),
@@ -713,6 +711,8 @@ mState (*this, &mUndoManager, "SonoBusAoO",
     mState.addParameterListener (paramSendMetAudio, this);
     mState.addParameterListener (paramSendFileAudio, this);
     mState.addParameterListener (paramSendSoundboardAudio, this);
+    mState.addParameterListener (paramSoundboardGain, this);
+
     mState.addParameterListener (paramHearLatencyTest, this);
     mState.addParameterListener (paramMetIsRecorded, this);
     mState.addParameterListener (paramMainReverbEnabled, this);
@@ -2620,6 +2620,11 @@ void SonobusAudioProcessor::doReceiveData()
 #define SONOBUS_MSG_SUGGEST_GROUP_LEN 14
 #define SONOBUS_FULLMSG_SUGGEST_GROUP SONOBUS_MSG_DOMAIN SONOBUS_MSG_SUGGEST_GROUP
 
+#define SONOBUS_MSG_MIDI "/midi"
+#define SONOBUS_MSG_MIDI_LEN 5
+#define SONOBUS_FULLMSG_MIDI SONOBUS_MSG_DOMAIN SONOBUS_MSG_MIDI
+
+
 
 enum {
     SONOBUS_MSGTYPE_UNKNOWN = 0,
@@ -2632,8 +2637,10 @@ enum {
     SONOBUS_MSGTYPE_LATINFO,
     SONOBUS_MSGTYPE_SUGGESTLAT,
     SONOBUS_MSGTYPE_BLOCKEDINFO,
-    SONOBUS_MSGTYPE_SUGGESTGROUP
+    SONOBUS_MSGTYPE_SUGGESTGROUP,
+    SONOBUS_MSGTYPE_MIDI
 };
+
 
 static int32_t sonobusOscParsePattern(const char *msg, int32_t n, int32_t & rettype)
 {
@@ -2711,6 +2718,13 @@ static int32_t sonobusOscParsePattern(const char *msg, int32_t n, int32_t & rett
         {
             rettype = SONOBUS_MSGTYPE_SUGGESTGROUP;
             offset += SONOBUS_MSG_SUGGEST_GROUP_LEN;
+            return offset;
+        }
+        else if (n >= (offset + SONOBUS_MSG_MIDI_LEN)
+            && !memcmp(msg + offset, SONOBUS_MSG_MIDI, SONOBUS_MSG_MIDI_LEN))
+        {
+            rettype = SONOBUS_MSGTYPE_MIDI;
+            offset += SONOBUS_MSG_MIDI_LEN;
             return offset;
         }
         else {
@@ -3013,7 +3027,20 @@ bool SonobusAudioProcessor::handleOtherMessage(EndpointState * endpoint, const c
             
             clientListeners.call(&SonobusAudioProcessor::ClientListener::peerBlockedInfoChanged, this, username, blocked);
         }
+        else if (type == SONOBUS_MSGTYPE_MIDI) {
+            auto it = message.ArgumentsBegin();
+            const void *mididata;
+            osc::osc_bundle_element_size_t size;
+            (it++)->AsBlob(mididata, size);
+            
+            if (!isAddressBlocked(endpoint->ipaddr)) {
+                MidiMessage mm(mididata, size);
+                const ScopedLock sl (mMidiMappingsLock);
+                mIncomingMidiFromPeers.addEvent(mm, 0);
+            }
+        }
         return true;
+
     } catch (const osc::Exception& e){
         DBG("exception in handleOtherMessage: " << e.what());
     }
@@ -7076,6 +7103,10 @@ void SonobusAudioProcessor::parameterChanged (const String &parameterID, float n
     else if (parameterID == paramWet) {
         mWet = newValue;
     }
+    else if (parameterID == paramSoundboardGain) {
+        soundboardChannelProcessor->setGain(newValue);
+    }
+
     else if (parameterID == paramInMonitorMonoPan) {
         // old one
         mInMonMonoPan = newValue;
@@ -7605,7 +7636,14 @@ void SonobusAudioProcessor::ensureBuffers(int numSamples)
 
 void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midiMessages)
 {
+    {
+        const ScopedLock sl (mMidiMappingsLock);
+        midiMessages.addEvents (mIncomingMidiFromPeers, 0, buffer.getNumSamples(), 0);
+        mIncomingMidiFromPeers.clear();
+    }
+
     ScopedNoDenormals noDenormals;
+
     auto totalInputChannels  = getTotalNumInputChannels();
     auto mainBusInputChannels  = getMainBusNumInputChannels();
     auto mainBusOutputChannels = getMainBusNumOutputChannels();
@@ -7639,9 +7677,9 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
     // ---- MIDI Learn / CC processing ----------------------------------------
     for (const auto meta : midiMessages) {
         const auto msg = meta.getMessage();
-        if (msg.isController()) {
-            int cc      = msg.getControllerNumber();
-            int val     = msg.getControllerValue();    // 0..127
+        if (msg.isController() || msg.isNoteOn()) {
+            int cc      = msg.isController() ? msg.getControllerNumber() : msg.getNoteNumber();
+            int val     = msg.isController() ? msg.getControllerValue() : (msg.isNoteOn() ? msg.getVelocity() : 0);
             int channel = msg.getChannel();            // 1..16
 
             if (mMidiLearnActive.load()) {
@@ -7663,12 +7701,112 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
                             setFilePlaybackGain(m.targetData, fval);
                             break;
                         case MidiTarget_FileStemMute:
-                            // toggle mute on any value>0, or use >= 64 as on / <64 as off
                             setFilePlaybackMuted(m.targetData, val >= 64);
                             break;
                         case MidiTarget_FileStemSolo:
                             setFilePlaybackSoloed(m.targetData, val >= 64);
                             break;
+                        case MidiTarget_InputGain:
+                            if (auto* p = mState.getParameter(paramInGain))
+                                p->setValueNotifyingHost(fval);
+                            break;
+                        case MidiTarget_OutputGain:
+                            if (auto* p = mState.getParameter(paramWet))
+                                p->setValueNotifyingHost(fval);
+                            break;
+                        case MidiTarget_PeerLevel:
+                            setRemotePeerLevelGain(m.targetData, fval);
+                            break;
+                        case MidiTarget_PeerPan:
+                            setRemotePeerChannelPan(m.targetData, 0, 0, fval * 2.0f - 1.0f); // -1 to 1
+                            break;
+                        case MidiTarget_PeerMute:
+                            setRemotePeerChannelMuted(m.targetData, 0, val >= 64);
+                            break;
+                        case MidiTarget_InputMute:
+                            if (auto* p = mState.getParameter(paramMainInMute))
+                                p->setValueNotifyingHost(val >= 64 ? 1.0f : 0.0f);
+                            break;
+                        case MidiTarget_SoundboardLevel:
+                            if (auto* p = mState.getParameter(paramSoundboardGain))
+                                p->setValueNotifyingHost(fval);
+                            break;
+
+                        case MidiTarget_MonitorLevel:
+                            if (auto* p = mState.getParameter(paramDry))
+                                p->setValueNotifyingHost(fval);
+                            break;
+                        case MidiTarget_MetronomeLevel:
+                            if (auto* p = mState.getParameter(paramMetGain))
+                                p->setValueNotifyingHost(fval);
+                            break;
+
+                        case MidiTarget_FXLevel:
+                            if (auto* p = mState.getParameter(paramMainReverbLevel))
+                                p->setValueNotifyingHost(fval);
+                            break;
+                        case MidiTarget_FXEnable:
+                            if (val >= 64) {
+                                if (auto* p = mState.getParameter(paramMainReverbEnabled))
+                                    p->setValueNotifyingHost(p->getValue() > 0.5f ? 0.0f : 1.0f);
+                            }
+                            break;
+
+                        case MidiTarget_FullMixMonitorLevel:
+                            setFilePlaybackMonitor(0, fval);
+                            break;
+
+                        case MidiTarget_TransportPlay:
+                            if (val >= 64) {
+                                if (mTransportSource.isPlaying()) mTransportSource.stop();
+                                else mTransportSource.start();
+                            }
+                            break;
+
+                        case MidiTarget_TransportRecord:
+                            if (val >= 64) {
+                                // Record toggle - we'll let the editor handle some of this 
+                                // but we can trigger it here if it's already configured.
+                                if (isRecordingToFile()) stopRecordingToFile();
+                                else {
+                                    // We need settings to start... this is tricky without UI.
+                                    // But we can try using defaults if available.
+                                    URL mainret;
+                                    startRecordingToFile(mDefaultRecordDir, "recording", mainret);
+                                }
+                            }
+                            break;
+
+                        case MidiTarget_TransportLoop:
+                            if (val >= 64) {
+                                mTransportSource.setLooping(!mTransportSource.isLooping());
+                            }
+                            break;
+
+                        case MidiTarget_TransportMetronome:
+                            if (val >= 64) {
+                                if (auto* p = mState.getParameter(paramMetEnabled))
+                                    p->setValueNotifyingHost(p->getValue() > 0.5f ? 0.0f : 1.0f);
+                            }
+                            break;
+
+                        case MidiTarget_ResetAllJitters:
+                            if (val >= 64) {
+                                bool initComp = false;
+                                for (int j=0; j < (int)mRemotePeers.size(); ++j) {
+                                    if (getRemotePeerAutoresizeBufferMode(j, initComp) != AutoNetBufferModeOff) {
+                                        setRemotePeerBufferTime(j, 0.0f);
+                                    }
+                                }
+                            }
+                            break;
+
+                        case MidiTarget_FileStemMonitor:
+                            setFilePlaybackMonitor(m.targetData, fval);
+                            break;
+
+
+
                         default:
                             break;
                     }
@@ -8810,9 +8948,33 @@ void SonobusAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer
 
                 }
 
-                if (activeMixWriter.load() != nullptr) {
-                    // write out full mix
-                    activeMixWriter.load()->write (workBuffer.getArrayOfReadPointers(), numSamples);
+                if (auto writer = activeMixWriter.load()) {
+                    if (moggWritingPossible.load()) {
+                        if (moggWorkBuffer.getNumChannels() != totalRecordingChannels || moggWorkBuffer.getNumSamples() < numSamples) {
+                            moggWorkBuffer.setSize(totalRecordingChannels, numSamples, false, false, true);
+                        }
+                        moggWorkBuffer.clear();
+                        
+                        // Self
+                        const float * const* inbufs = mRecordInputPreFX ? inputPreBuffer.getArrayOfReadPointers() : inputPostBuffer.getArrayOfReadPointers();
+                        for (int i=0; i < moggSelfChannels && i < totalRecordingChannels; ++i) {
+                             const bool silenceIns = mRecordInputSilenceWhenMuted && (inGain == 0.0f); 
+                             if (!silenceIns) moggWorkBuffer.copyFrom(i, 0, inbufs[i], numSamples);
+                        }
+                        
+                        // Peers
+                        for (auto & remote : mRemotePeers) {
+                             if (remote->moggStartChannel >= 0 && remote->moggStartChannel + remote->recvChannels <= totalRecordingChannels) {
+                                 for (int c=0; c < remote->recvChannels; ++c) {
+                                     moggWorkBuffer.copyFrom(remote->moggStartChannel + c, 0, remote->workBuffer, c, 0, numSamples);
+                                 }
+                             }
+                        }
+                        writer->write(moggWorkBuffer.getArrayOfReadPointers(), numSamples);
+                    } else {
+                        // write out full mix
+                        writer->write (workBuffer.getArrayOfReadPointers(), numSamples);
+                    }
                 }
                 
             }
@@ -9613,6 +9775,21 @@ bool SonobusAudioProcessor::startRecordingToFile(const URL & recordLocationUrl, 
         usefile = usefile.withFileExtension(".ogg");
         mimetype = "audio/ogg" ;
     }
+    else if (fileformat == FileFormatMOGG || (fileformat == FileFormatAuto && usefile.getFileExtension().toLowerCase() == ".mogg")) {
+        moggSelfChannels = mActiveInputChannels;
+        totalRecordingChannels = moggSelfChannels;
+        for (auto& remote : mRemotePeers) {
+            remote->moggStartChannel = totalRecordingChannels;
+            totalRecordingChannels += remote->recvChannels;
+        }
+        if (totalRecordingChannels == 0) totalRecordingChannels = 2;
+
+        audioFormat = std::make_unique<OggVorbisAudioFormat>();
+        qualindex = 8; // 256k
+        usefile = usefile.withFileExtension(".mogg");
+        mimetype = "audio/ogg";
+        moggWritingPossible = true;
+    }
     else {
         mLastError = TRANS("Could not find format for filename");
         DBG(mLastError);
@@ -9987,6 +10164,7 @@ bool SonobusAudioProcessor::stopRecordingToFile()
 
         writingPossible.store(false);
         userWritingPossible.store(false);
+        moggWritingPossible.store(false);
 
         // transfer ownership of writers to our temporary OwnedArray to be cleared below
         for (auto & remote : mRemotePeers) {
@@ -10241,9 +10419,95 @@ double SonobusAudioProcessor::getMonitoringDelayTimeFromAvgPeerLatency(float sca
 
 
 
+
+void SonobusAudioProcessor::setMidiRelayDevice (const String& name)
+{
+    if (mMidiRelayDevice == name) return;
+    mMidiRelayDevice = name;
+    mMidiRelayInput.reset();
+    if (name.isNotEmpty()) {
+        auto devices = MidiInput::getAvailableDevices();
+        for (auto& d : devices) {
+            if (d.name == name) {
+                mMidiRelayInput = MidiInput::openDevice (d.identifier, this);
+                break;
+            }
+        }
+        if (mMidiRelayInput) mMidiRelayInput->start();
+    }
+}
+
+void SonobusAudioProcessor::setMidiLearnDevice (const String& name)
+{
+    if (mMidiLearnDevice == name) return;
+    mMidiLearnDevice = name;
+    mMidiLearnInput.reset();
+    if (name.isNotEmpty()) {
+        auto devices = MidiInput::getAvailableDevices();
+        for (auto& d : devices) {
+            if (d.name == name) {
+                mMidiLearnInput = MidiInput::openDevice (d.identifier, this);
+                break;
+            }
+        }
+        if (mMidiLearnInput) mMidiLearnInput->start();
+    }
+}
+
+void SonobusAudioProcessor::handleIncomingMidiMessage (MidiInput* source, const MidiMessage& message)
+{
+    if (source == mMidiRelayInput.get()) {
+        sendMidiToPeers (message);
+    }
+    
+    if (source == mMidiLearnInput.get()) {
+        if (mMidiLearnActive.load() && (message.isController() || message.isNoteOn())) {
+            setMidiMapping (mMidiLearnTargetType, mMidiLearnTargetData, 
+                            message.isController() ? message.getControllerNumber() : message.getNoteNumber(), 
+                            message.getChannel());
+            mMidiLearnActive = false;
+        }
+    }
+}
+
+void SonobusAudioProcessor::sendMidiToPeers (const MidiMessage& message)
+{
+    char buf[AOO_MAXPACKETSIZE];
+    osc::OutboundPacketStream msg (buf, sizeof (buf));
+    try {
+        msg << osc::BeginMessage ("/sb/midi")
+            << osc::Blob (message.getRawData(), (int) message.getRawDataSize())
+            << osc::EndMessage;
+    } catch (...) { return; }
+
+
+    const ScopedReadLock sl (mCoreLock);
+    for (int i = 0; i < mRemotePeers.size(); ++i) {
+        if (mRemotePeerMidiRelay[i]) {
+            sendPeerMessage (mRemotePeers.getUnchecked(i), msg.Data(), (int) msg.Size());
+        }
+    }
+}
+
+void SonobusAudioProcessor::setRemotePeerMidiRelay (int peerIndex, bool enabled)
+{
+    if (peerIndex >= 0 && peerIndex < MAX_PEERS) {
+        mRemotePeerMidiRelay[peerIndex] = enabled;
+    }
+}
+
+bool SonobusAudioProcessor::getRemotePeerMidiRelay (int peerIndex) const
+{
+    if (peerIndex >= 0 && peerIndex < MAX_PEERS) {
+        return mRemotePeerMidiRelay[peerIndex];
+    }
+    return false;
+}
+
 //==============================================================================
 // This creates new instances of the plugin..
 AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new SonobusAudioProcessor();
 }
+
