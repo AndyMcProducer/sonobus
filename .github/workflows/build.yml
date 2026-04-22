@@ -31,8 +31,23 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libjack-jackd2-dev libopus-dev opus-tools libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libgl-dev libfreetype6-dev libcurl4-openssl-dev
 
+    - name: Download ASIO SDK
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        curl -L -o asiosdk.zip https://www.steinberg.net/asiosdk -H "User-Agent: Mozilla/5.0"
+        Expand-Archive asiosdk.zip -DestinationPath asiosdk_ext
+        $asiodir = Get-ChildItem -Path asiosdk_ext -Directory | Select-Object -First 1
+        Move-Item $asiodir.FullName ./asiosdk
+
     - name: Setup CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: |
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          cmake -B build -DCMAKE_BUILD_TYPE=Release "-DASIO_SDK_PATH=${{ github.workspace }}/asiosdk"
+        else
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+        fi
+      shell: bash
 
     - name: Build
       run: cmake --build build --config Release --parallel 4
